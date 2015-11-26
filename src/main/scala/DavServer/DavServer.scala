@@ -11,6 +11,7 @@ import org.eclipse.jetty.server
 import org.eclipse.jetty.server.{Request, Server}
 import org.eclipse.jetty.server.handler.{ContextHandler, ErrorHandler, AbstractHandler}
 import org.eclipse.jetty.util.IO
+import org.eclipse.jetty.util.component.Container
 
 
 import scala.concurrent.{Await, Future}
@@ -29,11 +30,14 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
     val s = new Server(port)
     val context = new ContextHandler()
     context.setHandler(this)
+    context.setContextPath("/*")
     s.setHandler(context)
 
     s.start()
     s.join()
   }
+
+
 
   def propfind(props: NodeSeq, res: Resource, depth: String) = {
 
@@ -64,18 +68,19 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
   }
 
 
-  override def writeErrorPageMessage(request: HttpServletRequest, writer: Writer, code: Int, message: String, uri: String): Unit = {
-    println(message)
-    super.writeErrorPageMessage(request, writer, code, message, uri)
-  }
 
   override def handle(target: String, baseRequest: server.Request, req: HttpServletRequest, res: HttpServletResponse): Unit = {
     val r:Request = req.asInstanceOf[Request]
 
+    r.setHandled(true)
+
     println("TARGET: " +  target + " " + r.getMethod)
 
-    val asyncContext = baseRequest.startAsync(req, res)
-    asyncContext.setTimeout(1000000)
+    res.setCharacterEncoding("utf-8")
+    baseRequest.setAsyncSupported(true)
+    r.setAsyncSupported(true)
+
+    val asyncContext = baseRequest.startAsync()
 
     asyncContext.start(new Runnable {
       override def run(): Unit = {
@@ -84,17 +89,17 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
             val res = asyncContext.getResponse.asInstanceOf[HttpServletResponse]
             val req = asyncContext.getRequest.asInstanceOf[HttpServletRequest]
 
-            res.setContentType("text/xml; charset=\"utf-8\"")
-
             resour match {
               case Some(resource) =>
                 req.getMethod match {
                   case "OPTIONS" =>
                     res.setHeader("DAV", "1")
                     res.setHeader("Allow", "GET,OPTIONS,PROPFIND")
+                    res.setStatus(200)
 
                   case "HEAD" =>
                     res.setContentLength(resource.length)
+                    res.setStatus(200)
 
                   case "PROPFIND" => res.setContentType("application/xml")
                     res.setStatus(207)
@@ -109,6 +114,7 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
 
                   case "GET" =>
                     res.setContentLength(resource.length)
+                    res.setStatus(200)
                     println("serve " + target)
 
                     IO.copy(resource.stream, res.getOutputStream)
