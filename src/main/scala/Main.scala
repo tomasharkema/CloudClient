@@ -17,7 +17,7 @@ object Main {
   def main(args: Array[String]) {
     args.foreach(println)
 
-    val folder = new File("/Users/tomas/.cloudcache")
+    val folder = new File("~/.cloudcache")
     folder.mkdirs()
 
     val config = new DbxRequestConfig("tomasharkema/cloud-client", "nl_NL")
