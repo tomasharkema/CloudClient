@@ -1,21 +1,12 @@
 package DavServer
 
-import java.io.Writer
-import java.nio.ByteBuffer
-import javax.servlet.{WriteListener, AsyncEvent, AsyncListener}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 
 import _root_.server.{AsyncHandlerTrait, AsyncHandler}
-import org.eclipse.jetty.continuation.{Continuation, ContinuationListener, ContinuationSupport}
-import org.eclipse.jetty.http.HttpFields
 import org.eclipse.jetty.io.EofException
-import org.eclipse.jetty.server
-import org.eclipse.jetty.server.{HttpOutput, Request, Server}
+import org.eclipse.jetty.server._
 import org.eclipse.jetty.server.handler.{ContextHandler, ErrorHandler, AbstractHandler}
 import org.eclipse.jetty.util.IO
-import org.eclipse.jetty.util.component.Container
-
-
 import scala.concurrent.{Await, Future}
 import scala.xml._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -96,12 +87,13 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
                 complete()
 
               case "GET" =>
+                val input = scala.io.Source.fromInputStream(req.getInputStream).mkString
+                println(input)
                 res.setContentLength(resource.length)
-                val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
-
                 val future = resource.stream
                 future onSuccess {
                   case stream =>
+                    val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
                     if (!outputStream.isClosed) {
                       try {
                         IO.copy(stream, outputStream)
@@ -109,6 +101,8 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
                         case e: EofException =>
                           println("Eof")
                       }
+                    } else {
+                      println("CLOSED")
                     }
                     complete()
                 }

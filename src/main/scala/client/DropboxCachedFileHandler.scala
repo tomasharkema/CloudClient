@@ -10,7 +10,7 @@ import com.dropbox.core.v2.DbxFiles.FileMetadata
 import sun.misc.IOUtils
 
 import scala.collection.mutable
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.xml.{Text, Elem, Node}
 
 import scala.collection.JavaConverters._
@@ -76,11 +76,10 @@ class DropboxFileDownloader(client: DbxClientV2) {
   var hits = mutable.HashMap[String, Future[FileInputStream]]()
 
   private def doneWithHit(node: FolderAndFile) = hits.synchronized {
-    println("DONE WITH " + node.url)
     hits.remove(node.url)
   }
 
-  def stream(absoluteFile: File, node: FolderAndFile): Future[FileInputStream] = hits.synchronized {
+  def stream(absoluteFile: File, node: FolderAndFile): Future[FileInputStream] = {
     hits.get(node.url) match {
       case Some(future) =>
         future
@@ -91,7 +90,7 @@ class DropboxFileDownloader(client: DbxClientV2) {
             doneWithHit(node)
             new FileInputStream(absoluteFile)
           } else {
-            println("Downloading " + node.url + "...")
+            println("Downloading " + node.url + "... concurrent: " + hits.keys.size)
             absoluteFile.getParentFile.mkdirs()
             val fileDownload = client.files.downloadBuilder(node.url).start()
             Files.copy(fileDownload.body, absoluteFile.toPath)
@@ -129,36 +128,36 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
     }
   }
 
-  def refreshFolder(): Unit = this.synchronized {
-      if (isRefreshing) {
+  def refreshFolder(): Unit = {
+      if (this.synchronized { isRefreshing }) {
         return
       }
 
       println("Refresh folder")
 
       _files = None
-      isRefreshing = true
+      this.synchronized { isRefreshing = true }
       Future {
         StaticFolderNode("", getNodesForFolder(""))
       } onSuccess {
         case files =>
           println("Done refreshing folder")
-          _files = Some(files)
+          _files.synchronized { _files = Some(files) }
       }
   }
 
   var _files: Option[FolderNode] = None
 
-  def files(): Future[FolderNode] = this.synchronized {
-      if (_files.isDefined) {
-        Future.apply(_files.get)
+  def files(): Future[FolderNode] = {
+      if (_files.synchronized { _files.isDefined }) {
+        Future.apply(_files.synchronized { _files.get })
       } else {
         refreshFolder()
         Future {
-          while (_files.isEmpty) {
-            Thread.sleep(1000)
+          while (_files.synchronized {  _files.isEmpty }) {
+            Thread.sleep(5000)
           }
-          _files.get
+          _files.synchronized { _files.get }
         }
       }
   }

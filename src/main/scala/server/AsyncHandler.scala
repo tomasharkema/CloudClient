@@ -6,12 +6,25 @@ import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import org.eclipse.jetty.server._
 import org.eclipse.jetty.server.handler._
 
+import scala.collection.mutable
+
 trait AsyncHandlerTrait {
   def handle(target: String, req: HttpServletRequest, res: HttpServletResponse, complete: (() => Unit))
 }
 
 class AsyncHandler(handler: AsyncHandlerTrait) extends ErrorHandler {
   override def handle(target: String, baseRequest: Request, req: HttpServletRequest, res: HttpServletResponse): Unit = {
+    println(target)
+
+    var headers = mutable.HashMap[String, String]()
+    val headerNames = req.getHeaderNames
+
+    while (headerNames.hasMoreElements) {
+      val key = headerNames.nextElement()
+      val value = req.getHeader(key)
+      headers ++= Map(key -> value)
+    }
+
     baseRequest.setHandled(true)
 
     res.setCharacterEncoding("utf-8")
