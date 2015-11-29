@@ -61,8 +61,6 @@ case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode]) ext
 case class FolderAndFile(path: String, file: FileSystemNode) {
 
   def pathFix(string: String): String = {
-    println("PATHFIX " + string)
-
 
     def s(pathFix: String) = pathFix.replaceAll("/./", "/").replaceAll("//", "/")
 

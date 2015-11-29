@@ -16,14 +16,12 @@ object Main {
     folder.mkdirs()
 
     val config = new DbxRequestConfig("dropbox/java-tutorial", "nl_NL")
-    val client = new DbxClientV2(config, accessToken)
+    implicit val client = new DbxClientV2(config, accessToken)
 
-    var fileHandler = new DropboxCachedFileHandler(folder, client)
+    val fileHandler = new DropboxCachedFileHandler(folder)
 
     val server = new DavServer(7070, fileHandler)
     server.startServer()
-
-
 
     fileHandler.refreshFolder()
   }

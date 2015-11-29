@@ -2,13 +2,15 @@ package DavServer
 
 import java.io.Writer
 import java.nio.ByteBuffer
-import javax.servlet.{AsyncEvent, AsyncListener}
+import javax.servlet.{WriteListener, AsyncEvent, AsyncListener}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 
+import _root_.server.{AsyncHandlerTrait, AsyncHandler}
 import org.eclipse.jetty.continuation.{Continuation, ContinuationListener, ContinuationSupport}
 import org.eclipse.jetty.http.HttpFields
+import org.eclipse.jetty.io.EofException
 import org.eclipse.jetty.server
-import org.eclipse.jetty.server.{Request, Server}
+import org.eclipse.jetty.server.{HttpOutput, Request, Server}
 import org.eclipse.jetty.server.handler.{ContextHandler, ErrorHandler, AbstractHandler}
 import org.eclipse.jetty.util.IO
 import org.eclipse.jetty.util.component.Container
@@ -22,22 +24,20 @@ trait FileHandler {
   def resourceForTarget(target: String): Future[Option[Resource]]
 }
 
-class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
+class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrait {
 
   val url = "http://localhost:" + port
 
   def startServer(): Unit = {
     val s = new Server(port)
     val context = new ContextHandler()
-    context.setHandler(this)
+    context.setHandler(new AsyncHandler(this))
     context.setContextPath("/*")
     s.setHandler(context)
 
     s.start()
     s.join()
   }
-
-
 
   def propfind(props: NodeSeq, res: Resource, depth: String) = {
 
@@ -67,66 +67,56 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends ErrorHandler {
     </D:multistatus>
   }
 
+  override def handle(target: String, req: HttpServletRequest, res: HttpServletResponse, complete: (() => Unit)): Unit = {
+    handler.resourceForTarget(target.substring(1)) onSuccess {
+      case resour =>
+        resour match {
+          case Some(resource) =>
+            req.getMethod match {
+              case "OPTIONS" =>
+                res.setHeader("DAV", "1")
+                res.setHeader("Allow", "GET,OPTIONS,PROPFIND")
+                res.setStatus(200)
 
+                complete()
 
-  override def handle(target: String, baseRequest: server.Request, req: HttpServletRequest, res: HttpServletResponse): Unit = {
-    val r:Request = req.asInstanceOf[Request]
+              case "HEAD" =>
+                res.setContentLength(resource.length)
+                res.setStatus(200)
 
-    r.setHandled(true)
+                complete()
 
-    println("TARGET: " +  target + " " + r.getMethod)
+              case "PROPFIND" => res.setContentType("application/xml")
+                res.setStatus(207)
+                val depth = req.getHeader("Depth")
+                val input = XML.load(req.getInputStream)
+                val prop = propfind(input \ "prop" \ "_", resource, depth)
+                XML.write(res.getWriter, prop, "utf-8", true, null)
 
-    res.setCharacterEncoding("utf-8")
-    baseRequest.setAsyncSupported(true)
-    r.setAsyncSupported(true)
+                complete()
 
-    val asyncContext = baseRequest.startAsync()
+              case "GET" =>
+                res.setContentLength(resource.length)
+                val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
 
-    asyncContext.start(new Runnable {
-      override def run(): Unit = {
-        handler.resourceForTarget(target.substring(1)) onSuccess {
-          case resour =>
-            val res = asyncContext.getResponse.asInstanceOf[HttpServletResponse]
-            val req = asyncContext.getRequest.asInstanceOf[HttpServletRequest]
-
-            resour match {
-              case Some(resource) =>
-                req.getMethod match {
-                  case "OPTIONS" =>
-                    res.setHeader("DAV", "1")
-                    res.setHeader("Allow", "GET,OPTIONS,PROPFIND")
-                    res.setStatus(200)
-
-                  case "HEAD" =>
-                    res.setContentLength(resource.length)
-                    res.setStatus(200)
-
-                  case "PROPFIND" => res.setContentType("application/xml")
-                    res.setStatus(207)
-
-                    val depth = req.getHeader("Depth")
-                    val input = XML.load(req.getInputStream)
-
-                    val prop = propfind(input \ "prop" \ "_", resource, depth)
-
-                    XML.write(res.getWriter, prop, "utf-8", true, null)
-                    println("prop serve " + target)
-
-                  case "GET" =>
-                    res.setContentLength(resource.length)
-                    res.setStatus(200)
-                    println("serve " + target)
-
-                    IO.copy(resource.stream, res.getOutputStream)
+                val future = resource.stream
+                future onSuccess {
+                  case stream =>
+                    if (!outputStream.isClosed) {
+                      try {
+                        IO.copy(stream, outputStream)
+                      } catch {
+                        case e: EofException =>
+                          println("Eof")
+                      }
+                    }
+                    complete()
                 }
-              case _ =>
-                println("NotFound! " + target)
-                res.sendError(404, "Not found!")
             }
-
-            asyncContext.complete()
+          case _ =>
+            res.sendError(404, "Not found!")
+            complete()
         }
-      }
-    })
+    }
   }
 }
