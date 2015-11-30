@@ -1,5 +1,7 @@
 package client
 
+import java.util.Date
+
 import com.dropbox.core.v2.DbxClientV2
 
 import scala.concurrent._
@@ -10,11 +12,13 @@ sealed abstract class FileSystemNode {
   def isFile: Boolean
   def isFolder: Boolean
 
+  def modifiedDate: Date
+
   @inline def file: Option[FileNode] = if (isFile) Some(this.asInstanceOf[FileNode]) else None
   @inline def folder: Option[FolderNode] = if (isFolder) Some(this.asInstanceOf[FolderNode]) else None
 }
 
-case class FileNode(name: String, size: Int) extends FileSystemNode {
+case class FileNode(name: String, size: Int, modifiedDate: Date) extends FileSystemNode {
   def isFile = true
   def isFolder = false
 }
@@ -46,9 +50,9 @@ sealed abstract class FolderNode extends FileSystemNode {
   }
 }
 
-case class StaticFolderNode(name: String, childs: Seq[FileSystemNode]) extends FolderNode
+case class StaticFolderNode(name: String, childs: Seq[FileSystemNode], modifiedDate: Date) extends FolderNode
 
-case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode]) extends FolderNode {
+case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode], modifiedDate: Date) extends FolderNode {
 
   var child: Option[Seq[FileSystemNode]] = None
 

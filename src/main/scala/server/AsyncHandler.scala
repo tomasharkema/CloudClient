@@ -16,15 +16,6 @@ class AsyncHandler(handler: AsyncHandlerTrait) extends ErrorHandler {
   override def handle(target: String, baseRequest: Request, req: HttpServletRequest, res: HttpServletResponse): Unit = {
     println(target)
 
-    var headers = mutable.HashMap[String, String]()
-    val headerNames = req.getHeaderNames
-
-    while (headerNames.hasMoreElements) {
-      val key = headerNames.nextElement()
-      val value = req.getHeader(key)
-      headers ++= Map(key -> value)
-    }
-
     baseRequest.setHandled(true)
 
     res.setCharacterEncoding("utf-8")

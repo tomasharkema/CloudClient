@@ -3,10 +3,11 @@ package client
 import java.io.{FileOutputStream, FileInputStream, InputStream, File}
 import java.nio.file.Files
 import java.util.Date
+import java.util.concurrent.Executors
 
 import DavServer._
 import com.dropbox.core.v2.DbxClientV2
-import com.dropbox.core.v2.DbxFiles.FileMetadata
+import com.dropbox.core.v2.DbxFiles.{FolderMetadata, FileMetadata}
 import sun.misc.IOUtils
 
 import scala.collection.mutable
@@ -38,7 +39,7 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
       easyNode(Text(value))
 
     prop match {
-      case <getlastmodified/> => easy(formatter.format(new Date()))//easy(httpDate(file.lastModified))
+      case <getlastmodified/> => easy(formatter.format(node.file.modifiedDate))
 
       case <getcontentlength/> => easy(length.toString)
 
@@ -62,6 +63,9 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
     }
   }.getOrElse(Seq())
 
+
+  override def date: Date = node.file.modifiedDate
+
   override def length: Int = if (node.file.isFolder)
     366 //node.file.folder.get.childs.length
   else {
@@ -73,6 +77,9 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
 
 class DropboxFileDownloader(client: DbxClientV2) {
 
+  val downloadExecutionContext = ExecutionContext.fromExecutor(Executors.newScheduledThreadPool(2))
+  val serveFileExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+
   var hits = mutable.HashMap[String, Future[FileInputStream]]()
 
   private def doneWithHit(node: FolderAndFile) = hits.synchronized {
@@ -80,25 +87,29 @@ class DropboxFileDownloader(client: DbxClientV2) {
   }
 
   def stream(absoluteFile: File, node: FolderAndFile): Future[FileInputStream] = {
-    hits.get(node.url) match {
+    hits.synchronized { hits.get(node.url) } match {
       case Some(future) =>
         future
       case None =>
-        val future = Future {
-          if (absoluteFile.exists) {
-            println("Serving " + node.url + "...")
-            doneWithHit(node)
-            new FileInputStream(absoluteFile)
-          } else {
+
+        val future = if (absoluteFile.exists) {
+          println("Serving " + node.url + "...")
+          Future.apply(new FileInputStream(absoluteFile))(serveFileExecutor)
+        } else {
+          val f = Future {
             println("Downloading " + node.url + "... concurrent: " + hits.keys.size)
             absoluteFile.getParentFile.mkdirs()
             val fileDownload = client.files.downloadBuilder(node.url).start()
             Files.copy(fileDownload.body, absoluteFile.toPath)
             doneWithHit(node)
+            println("Downloaded " + node.url + "... concurrent: " + hits.keys.size)
             new FileInputStream(absoluteFile)
-          }
+          }(downloadExecutionContext)
+
+          hits.synchronized { hits ++= Map(node.url -> f) }
+          f
         }
-        hits ++= Map(node.url -> future)
+
         future
     }
   }
@@ -110,21 +121,23 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
 
   implicit var fileDownloader = new DropboxFileDownloader(client)
 
+  val waitForFilesExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+
+  refreshFolder()
+
   def getNodesForFolder(path: String, pathState: String = ""): Seq[FileSystemNode] = {
 
     val thisPath = if (pathState == "") path else pathState + path
 
     val entries = client.files.listFolder(thisPath).entries.asScala.toSeq
 
-    entries.map { el =>
-      el match {
-        case fileMetadata: FileMetadata =>
-          FileNode(el.name, fileMetadata.size.toInt)
-        case _ =>
-          LazyFolderNode(el.name, { () =>
-            getNodesForFolder("/" + el.name, thisPath)
-          })
-      }
+    entries.map {
+      case fileMetadata: FileMetadata =>
+        FileNode(fileMetadata.name, fileMetadata.size.toInt, fileMetadata.serverModified)
+      case folderMetaData: FolderMetadata =>
+        LazyFolderNode(folderMetaData.name, { () =>
+          getNodesForFolder("/" + folderMetaData.name, thisPath)
+        }, new Date)
     }
   }
 
@@ -138,8 +151,8 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
       _files = None
       this.synchronized { isRefreshing = true }
       Future {
-        StaticFolderNode("", getNodesForFolder(""))
-      } onSuccess {
+        StaticFolderNode("", getNodesForFolder(""), new Date)
+      }(waitForFilesExecutor) onSuccess {
         case files =>
           println("Done refreshing folder")
           _files.synchronized { _files = Some(files) }
@@ -155,10 +168,10 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
         refreshFolder()
         Future {
           while (_files.synchronized {  _files.isEmpty }) {
-            Thread.sleep(5000)
+            Thread.sleep(500)
           }
           _files.synchronized { _files.get }
-        }
+        }(waitForFilesExecutor)
       }
   }
 
