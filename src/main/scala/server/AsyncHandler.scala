@@ -9,27 +9,39 @@ import org.eclipse.jetty.server.handler._
 import scala.collection.mutable
 
 trait AsyncHandlerTrait {
+  def handleAsync: Boolean
+  def shouldHandle(target: String, req: HttpServletRequest, res: HttpServletResponse): Boolean
   def handle(target: String, req: HttpServletRequest, res: HttpServletResponse, complete: (() => Unit))
 }
 
 class AsyncHandler(handler: AsyncHandlerTrait) extends ErrorHandler {
   override def handle(target: String, baseRequest: Request, req: HttpServletRequest, res: HttpServletResponse): Unit = {
-    println(target)
+    val shouldHandle = handler.shouldHandle(target, req, res)
 
-    baseRequest.setHandled(true)
+    if (!shouldHandle) {
+      return
+    }
 
-    res.setCharacterEncoding("utf-8")
-    baseRequest.setAsyncSupported(true)
+    if (handler.handleAsync) {
 
-    val asyncContext = baseRequest.startAsync()
+      baseRequest.setHandled(true)
 
-    asyncContext.start(new Runnable {
-      override def run(): Unit = {
-        def res = asyncContext.getResponse.asInstanceOf[HttpServletResponse]
-        def req = asyncContext.getRequest.asInstanceOf[HttpServletRequest]
+      res.setCharacterEncoding("utf-8")
+      baseRequest.setAsyncSupported(true)
 
-        handler.handle(target, req, res, { () => asyncContext.complete() })
-      }
-    })
+      val asyncContext = baseRequest.startAsync()
+      asyncContext.setTimeout(0)
+      asyncContext.start(new Runnable {
+        override def run(): Unit = {
+          //def res = //asyncContext.getResponse.asInstanceOf[HttpServletResponse]
+          //def req = //asyncContext.getRequest.asInstanceOf[HttpServletRequest]
+
+          res.setHeader("Connection", "keep-alive")
+          handler.handle(target, req, res, { () => asyncContext.complete() })
+        }
+      })
+    } else {
+      handler.handle(target, req, res, { () => })
+    }
   }
 }

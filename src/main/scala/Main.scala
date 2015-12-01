@@ -22,7 +22,6 @@ object Main {
 
     val config = new DbxRequestConfig("tomasharkema/cloud-client", "nl_NL")
 
-
     implicit val client = new DbxClientV2(config, accessToken)
 
     val fileHandler = new DropboxCachedFileHandler(folder)

@@ -77,17 +77,17 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
 
 class DropboxFileDownloader(client: DbxClientV2) {
 
-  val downloadExecutionContext = ExecutionContext.fromExecutor(Executors.newScheduledThreadPool(2))
-  val serveFileExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+  val downloadExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(5))
+  val serveFileExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(20))
 
   var hits = mutable.HashMap[String, Future[FileInputStream]]()
 
-  private def doneWithHit(node: FolderAndFile) = hits.synchronized {
+  private def doneWithHit(node: FolderAndFile) = {
     hits.remove(node.url)
   }
 
   def stream(absoluteFile: File, node: FolderAndFile): Future[FileInputStream] = {
-    hits.synchronized { hits.get(node.url) } match {
+    hits.get(node.url) match {
       case Some(future) =>
         future
       case None =>
@@ -103,10 +103,12 @@ class DropboxFileDownloader(client: DbxClientV2) {
             Files.copy(fileDownload.body, absoluteFile.toPath)
             doneWithHit(node)
             println("Downloaded " + node.url + "... concurrent: " + hits.keys.size)
+          }(downloadExecutionContext).flatMap(res => Future {
+            println("Serving " + node.url + "...")
             new FileInputStream(absoluteFile)
-          }(downloadExecutionContext)
+          })(serveFileExecutor)
 
-          hits.synchronized { hits ++= Map(node.url -> f) }
+          hits ++= Map(node.url -> f)
           f
         }
 
@@ -120,8 +122,6 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
   private var isRefreshing = false
 
   implicit var fileDownloader = new DropboxFileDownloader(client)
-
-  val waitForFilesExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 
   refreshFolder()
 
@@ -142,37 +142,37 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
   }
 
   def refreshFolder(): Unit = {
-      if (this.synchronized { isRefreshing }) {
+      if (isRefreshing) {
         return
       }
 
       println("Refresh folder")
 
       _files = None
-      this.synchronized { isRefreshing = true }
+      isRefreshing = true
       Future {
         StaticFolderNode("", getNodesForFolder(""), new Date)
-      }(waitForFilesExecutor) onSuccess {
+      } onSuccess {
         case files =>
           println("Done refreshing folder")
-          _files.synchronized { _files = Some(files) }
+          _files = Some(files)
       }
   }
 
   var _files: Option[FolderNode] = None
 
   def files(): Future[FolderNode] = {
-      if (_files.synchronized { _files.isDefined }) {
-        Future.apply(_files.synchronized { _files.get })
-      } else {
-        refreshFolder()
-        Future {
-          while (_files.synchronized {  _files.isEmpty }) {
-            Thread.sleep(500)
-          }
-          _files.synchronized { _files.get }
-        }(waitForFilesExecutor)
+    if (_files.isDefined) {
+      Future.apply(_files.get)
+    } else {
+      refreshFolder()
+      Future {
+        while (_files.isEmpty) {
+          Thread.sleep(100)
+        }
+        _files.get
       }
+    }
   }
 
   def pathCreate(previous: Seq[FileSystemNode]): String =

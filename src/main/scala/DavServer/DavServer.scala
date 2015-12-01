@@ -7,7 +7,8 @@ import org.eclipse.jetty.io.EofException
 import org.eclipse.jetty.server._
 import org.eclipse.jetty.server.handler.{ContextHandler, ErrorHandler, AbstractHandler}
 import org.eclipse.jetty.util.IO
-import scala.concurrent.{Await, Future}
+import scala.concurrent._
+import scala.concurrent.duration._
 import scala.xml._
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -25,7 +26,6 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
     context.setHandler(new AsyncHandler(this))
     context.setContextPath("/*")
     s.setHandler(context)
-
     s.start()
     s.join()
   }
@@ -58,7 +58,18 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
     </D:multistatus>
   }
 
+
+  override def handleAsync: Boolean = true
+
+  override def shouldHandle(target: String, req: HttpServletRequest, res: HttpServletResponse): Boolean = if (target.split("/").lastOption.exists(_.startsWith("._"))) {
+    res.sendError(404, "Not found!")
+    false
+  } else {
+    true
+  }
+
   override def handle(target: String, req: HttpServletRequest, res: HttpServletResponse, complete: (() => Unit)): Unit = {
+    println(target)
     handler.resourceForTarget(target.substring(1)) onSuccess {
       case resour =>
         resour match {
@@ -87,24 +98,24 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
                 complete()
 
               case "GET" =>
-                val input = scala.io.Source.fromInputStream(req.getInputStream).mkString
-                println(input)
+                res.setStatus(200)
                 res.setContentLength(resource.length)
-                val future = resource.stream
-                future onSuccess {
-                  case stream =>
-                    val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
-                    if (!outputStream.isClosed) {
+
+                val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
+                if (outputStream.isClosed) {
+                  complete()
+                } else {
+                  val future = resource.stream
+                  future onSuccess {
+                    case stream =>
                       try {
                         IO.copy(stream, outputStream)
                       } catch {
                         case e: EofException =>
                           println("Eof")
                       }
-                    } else {
-                      println("CLOSED")
-                    }
-                    complete()
+                      complete()
+                  }
                 }
             }
           case _ =>
