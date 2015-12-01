@@ -1,36 +1,51 @@
 package DavServer
 
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+import spray.http.HttpData.Bytes
+import spray.http.HttpEntity.NonEmpty
+import spray.http.HttpHeaders.{RawHeader, Allow}
+import spray.httpx.unmarshalling.Unmarshaller
 
-import _root_.server.{AsyncHandlerTrait, AsyncHandler}
-import org.eclipse.jetty.io.EofException
-import org.eclipse.jetty.server._
-import org.eclipse.jetty.server.handler.{ContextHandler, ErrorHandler, AbstractHandler}
-import org.eclipse.jetty.util.IO
-import scala.concurrent._
+import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.xml._
+import akka.pattern.ask
+import akka.util.Timeout
+import akka.actor._
+import spray.can.Http
+import spray.can.server.Stats
+import spray.util._
+import spray.http._
+import HttpMethods._
+import MediaTypes._
+import akka.pattern.pipe
+
+import scala.util._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.xml._
 
 trait FileHandler {
   def resourceForTarget(target: String): Future[Option[Resource]]
 }
 
-class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrait {
+object DavServerActor {
+  def props(url: String, handler: FileHandler): Props = Props(new DavServerActor(url, handler))
+}
 
-  val url = "http://localhost:" + port
+class DavServerActor(url: String, handler: FileHandler) extends Actor with ActorLogging {
 
-  def startServer(): Unit = {
-    val s = new Server(port)
-    val context = new ContextHandler()
-    context.setHandler(new AsyncHandler(this))
-    context.setContextPath("/*")
-    s.setHandler(context)
-    s.start()
-    s.join()
-  }
+  val PROPFIND = HttpMethod.custom("PROPFIND", safe = true, idempotent = true, entityAccepted = false)
+  HttpMethods.register(PROPFIND)
 
-  def propfind(props: NodeSeq, res: Resource, depth: String) = {
+  val `application/xml` = ContentType(MediaTypes.`application/xml`, HttpCharsets.`UTF-8`)
+
+  private def optionsResponse = HttpResponse(
+    status = 200,
+    headers = List(
+      Allow(GET, OPTIONS, PROPFIND),
+      RawHeader("DAV", "1")
+    )
+  )
+
+  def propfind(url: String, props: NodeSeq, res: Resource, depth: String) = {
 
     val resources:Seq[Resource] = depth match {
       case "0" => res::Nil
@@ -59,69 +74,60 @@ class DavServer(port: Int = 7070, handler: FileHandler) extends AsyncHandlerTrai
   }
 
 
-  override def handleAsync: Boolean = true
+  def receive = {
+    case _: Http.Connected => sender ! Http.Register(self)
 
-  override def shouldHandle(target: String, req: HttpServletRequest, res: HttpServletResponse): Boolean = if (target.split("/").lastOption.exists(_.startsWith("._"))) {
-    res.sendError(404, "Not found!")
-    false
-  } else {
-    true
-  }
+    case HttpRequest(OPTIONS, _, _, _, _) =>
+      sender ! optionsResponse
 
-  override def handle(target: String, req: HttpServletRequest, res: HttpServletResponse, complete: (() => Unit)): Unit = {
-    println(target)
-    handler.resourceForTarget(target.substring(1)) onSuccess {
-      case resour =>
-        resour match {
-          case Some(resource) =>
-            req.getMethod match {
-              case "OPTIONS" =>
-                res.setHeader("DAV", "1")
-                res.setHeader("Allow", "GET,OPTIONS,PROPFIND")
-                res.setStatus(200)
+    case HttpRequest(HEAD, path, _, _, _) =>
+      handler.resourceForTarget(path.toString()) map {
+        case Some(resource) =>
+          HttpResponse(status = 200)
+        case None =>
+          HttpResponse(status = 404, entity = "Not Found")
+      } pipeTo sender
 
-                complete()
+    case HttpRequest(PROPFIND, path, headers, entity, _) =>
+      handler.resourceForTarget(path.path.toString()).map {
+        case Some(resource) =>
+          val depth = headers.find(_.is("depth")).map(_.value).getOrElse("0")
+          val input = XML.loadString(entity.asString)
+          val prop = propfind(url, input \ "prop" \ "_", resource, depth)
+          HttpResponse(
+            status = 207,
+            entity = HttpEntity.apply(`application/xml`, prop.toString)
+          )
+        case None =>
+          HttpResponse(status = 404, entity = "Not Found")
 
-              case "HEAD" =>
-                res.setContentLength(resource.length)
-                res.setStatus(200)
+      }.recover {
+        case e =>
+          log.error(e, entity.asString)
+          HttpResponse(status = 404, entity = "Not Found " + e.getMessage())
+      } pipeTo sender
 
-                complete()
+    case HttpRequest(GET, path, headers, entity, _) =>
+      handler.resourceForTarget(path.toString).map {
+        case Some(resource) =>
+          resource.stream.map { stream =>
 
-              case "PROPFIND" => res.setContentType("application/xml")
-                res.setStatus(207)
-                val depth = req.getHeader("Depth")
-                val input = XML.load(req.getInputStream)
-                val prop = propfind(input \ "prop" \ "_", resource, depth)
-                XML.write(res.getWriter, prop, "utf-8", true, null)
+            val byteArray = Stream.continually(stream.read).takeWhile(_ != -1).map(_.toByte).toArray
 
-                complete()
+            HttpResponse(status = 200, HttpEntity.apply(byteArray))
+          } pipeTo sender
+        case None =>
+          HttpResponse(status = 404, entity = "Not Found")
+      }
 
-              case "GET" =>
-                res.setStatus(200)
-                res.setContentLength(resource.length)
 
-                val outputStream = res.getOutputStream.asInstanceOf[HttpOutput]
-                if (outputStream.isClosed) {
-                  complete()
-                } else {
-                  val future = resource.stream
-                  future onSuccess {
-                    case stream =>
-                      try {
-                        IO.copy(stream, outputStream)
-                      } catch {
-                        case e: EofException =>
-                          println("Eof")
-                      }
-                      complete()
-                  }
-                }
-            }
-          case _ =>
-            res.sendError(404, "Not found!")
-            complete()
-        }
-    }
+    case _: HttpRequest =>
+      sender ! HttpResponse(status = 404, entity = "Unknown resource!")
+
+    case Timedout(HttpRequest(method, uri, _, _, _)) =>
+      sender ! HttpResponse(
+        status = 500,
+        entity = "The " + method + " request to '" + uri + "' has timed out..."
+      )
   }
 }

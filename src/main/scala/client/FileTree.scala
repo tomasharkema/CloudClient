@@ -29,6 +29,7 @@ sealed abstract class FolderNode extends FileSystemNode {
   def childs: Seq[FileSystemNode]
 
   def search(url: String, remainder: String = ""): Option[(String, FileSystemNode)] = {
+
     if (url == "" || url == "." || url == "/") {
       return Some(("", this))
     }
@@ -68,8 +69,13 @@ case class FolderAndFile(path: String, file: FileSystemNode) {
 
     def s(pathFix: String) = pathFix.replaceAll("/./", "/").replaceAll("//", "/")
 
-    if (!string.startsWith("/"))
-      s("/" + string)
+//    if (!string.startsWith("/"))
+//      s("/" + string)
+//    else
+//      s(string)
+
+    if (string.startsWith("/"))
+      s(string).substring(1)
     else
       s(string)
 

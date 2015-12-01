@@ -180,7 +180,8 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DbxClientV2) 
       prev + "/" + el.name
     }
 
-  override def resourceForTarget(target: String): Future[Option[Resource]] = {
+  override def resourceForTarget(t: String): Future[Option[Resource]] = {
+    val target = t.substring(1)
     files().map { e =>
       e.search(target).map { folderChain =>
         val absoluteFile = new File(cacheFolder.getAbsolutePath + "/files/" + target)
