@@ -1,25 +1,18 @@
-package DavServer
+package actor
 
-import spray.http.HttpData.Bytes
-import spray.http.HttpEntity.NonEmpty
-import spray.http.HttpHeaders.{RawHeader, Allow}
-import spray.httpx.unmarshalling.Unmarshaller
-
-import scala.concurrent.Future
-import scala.concurrent.duration._
-import akka.pattern.ask
-import akka.util.Timeout
+import java.net.URLDecoder
 import akka.actor._
-import spray.can.Http
-import spray.can.server.Stats
-import spray.util._
-import spray.http._
-import HttpMethods._
-import MediaTypes._
+import akka.io.Tcp.Closed
 import akka.pattern.pipe
+import client.Resource
+import spray.can.Http
+import spray.http.HttpHeaders.{Allow, RawHeader}
+import spray.http.HttpMethods._
+import spray.http.MediaTypes._
+import spray.http._
 
-import scala.util._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.xml._
 
 trait FileHandler {
@@ -34,8 +27,6 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
 
   val PROPFIND = HttpMethod.custom("PROPFIND", safe = true, idempotent = true, entityAccepted = false)
   HttpMethods.register(PROPFIND)
-
-  val `application/xml` = ContentType(MediaTypes.`application/xml`, HttpCharsets.`UTF-8`)
 
   private def optionsResponse = HttpResponse(
     status = 200,
@@ -73,15 +64,23 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
     </D:multistatus>
   }
 
+  def parsePath(path: Uri.Path): String = {
+    URLDecoder.decode(path.toString())
+  }
 
   def receive = {
     case _: Http.Connected => sender ! Http.Register(self)
+
+    case _: Http.CloseCommand =>
+      println("CLOSED")
+    case _: Http.ErrorClosed =>
+      println("ERR CLOSED")
 
     case HttpRequest(OPTIONS, _, _, _, _) =>
       sender ! optionsResponse
 
     case HttpRequest(HEAD, path, _, _, _) =>
-      handler.resourceForTarget(path.toString()) map {
+      handler.resourceForTarget(parsePath(path.path)) map {
         case Some(resource) =>
           HttpResponse(status = 200)
         case None =>
@@ -89,7 +88,7 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
       } pipeTo sender
 
     case HttpRequest(PROPFIND, path, headers, entity, _) =>
-      handler.resourceForTarget(path.path.toString()).map {
+      handler.resourceForTarget(parsePath(path.path)).map {
         case Some(resource) =>
           val depth = headers.find(_.is("depth")).map(_.value).getOrElse("0")
           val input = XML.loadString(entity.asString)
@@ -108,21 +107,22 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
       } pipeTo sender
 
     case HttpRequest(GET, path, headers, entity, _) =>
-      handler.resourceForTarget(path.toString).map {
-        case Some(resource) =>
-          resource.stream.map { stream =>
 
-            val byteArray = Stream.continually(stream.read).takeWhile(_ != -1).map(_.toByte).toArray
+      val h = handler.resourceForTarget(parsePath(path.path))
+        .flatMap(_.map(_.stream)
+          .getOrElse(Future.failed(new IllegalArgumentException(parsePath(path.path)))))
 
-            HttpResponse(status = 200, HttpEntity.apply(byteArray))
-          } pipeTo sender
-        case None =>
-          HttpResponse(status = 404, entity = "Not Found")
-      }
-
+      h.map { stream =>
+        HttpResponse(status = 200, HttpEntity.apply(HttpData.fromFile(fileName = stream.getAbsolutePath)))
+      }.recover {
+        case e =>
+          log.error(e, entity.asString)
+          HttpResponse(status = 404, entity = "Not Found " + e.getMessage())
+      } pipeTo sender
 
     case _: HttpRequest =>
       sender ! HttpResponse(status = 404, entity = "Unknown resource!")
+
 
     case Timedout(HttpRequest(method, uri, _, _, _)) =>
       sender ! HttpResponse(

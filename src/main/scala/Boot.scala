@@ -1,12 +1,12 @@
 import java.io.File
-
-import DavServer.DavServerActor
+import actor.DavServerActor
 import akka.actor.{ActorSystem, Props}
 import akka.io.IO
 import akka.util.Timeout
 import client.DropboxCachedFileHandler
 import com.dropbox.core.DbxRequestConfig
 import com.dropbox.core.v2.DbxClientV2
+import com.typesafe.config.ConfigFactory
 import spray.can.Http
 
 /**
@@ -16,7 +16,7 @@ import spray.can.Http
 object Boot extends App {
   implicit val system = ActorSystem()
 
-  val folder = new File("/Users/tomas/.cloudcache")
+  val folder = new File(ConfigFactory.load().getString("client.cache-path"))
   folder.mkdirs()
 
   val config = new DbxRequestConfig("tomasharkema/cloud-client", "nl_NL")

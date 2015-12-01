@@ -1,7 +1,9 @@
-package DavServer
+package client
 
-import java.io.{FileInputStream, InputStream, File}
-import java.util.Date
+import java.io.{File, InputStream}
+
+import spray.http.DateTime
+
 import scala.concurrent.Future
 import scala.xml._
 
@@ -15,6 +17,6 @@ trait Resource {
   def url: String
   def children: Seq[Resource]
   def length: Int
-  def date: Date
-  def stream: Future[InputStream]
+  def date: DateTime
+  def stream: Future[File]
 }

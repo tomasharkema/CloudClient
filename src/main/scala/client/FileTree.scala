@@ -3,6 +3,7 @@ package client
 import java.util.Date
 
 import com.dropbox.core.v2.DbxClientV2
+import spray.http.DateTime
 
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -12,13 +13,13 @@ sealed abstract class FileSystemNode {
   def isFile: Boolean
   def isFolder: Boolean
 
-  def modifiedDate: Date
+  def modifiedDate: DateTime
 
   @inline def file: Option[FileNode] = if (isFile) Some(this.asInstanceOf[FileNode]) else None
   @inline def folder: Option[FolderNode] = if (isFolder) Some(this.asInstanceOf[FolderNode]) else None
 }
 
-case class FileNode(name: String, size: Int, modifiedDate: Date) extends FileSystemNode {
+case class FileNode(name: String, size: Int, modifiedDate: DateTime) extends FileSystemNode {
   def isFile = true
   def isFolder = false
 }
@@ -27,6 +28,7 @@ sealed abstract class FolderNode extends FileSystemNode {
   def isFile = false
   def isFolder = true
   def childs: Seq[FileSystemNode]
+  def isResolved: Boolean
 
   def search(url: String, remainder: String = ""): Option[(String, FileSystemNode)] = {
 
@@ -51,9 +53,13 @@ sealed abstract class FolderNode extends FileSystemNode {
   }
 }
 
-case class StaticFolderNode(name: String, childs: Seq[FileSystemNode], modifiedDate: Date) extends FolderNode
+case class StaticFolderNode(name: String, childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
+  def isResolved = true
+}
 
-case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode], modifiedDate: Date) extends FolderNode {
+case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
+
+  def isResolved = child.isDefined
 
   var child: Option[Seq[FileSystemNode]] = None
 
@@ -69,16 +75,10 @@ case class FolderAndFile(path: String, file: FileSystemNode) {
 
     def s(pathFix: String) = pathFix.replaceAll("/./", "/").replaceAll("//", "/")
 
-//    if (!string.startsWith("/"))
-//      s("/" + string)
-//    else
-//      s(string)
-
-    if (string.startsWith("/"))
-      s(string).substring(1)
+    if (!string.startsWith("/"))
+      s("/" + string)
     else
       s(string)
-
   }
 
   def url = pathFix(path +
