@@ -2,13 +2,13 @@ package client
 
 import java.util.Date
 
-import com.dropbox.core.v2.DbxClientV2
 import spray.http.DateTime
 
 import scala.concurrent._
 import scala.concurrent.duration._
 
 sealed abstract class FileSystemNode {
+  def id: String
   def name: String
   def isFile: Boolean
   def isFolder: Boolean
@@ -19,7 +19,7 @@ sealed abstract class FileSystemNode {
   @inline def folder: Option[FolderNode] = if (isFolder) Some(this.asInstanceOf[FolderNode]) else None
 }
 
-case class FileNode(name: String, size: Int, modifiedDate: DateTime) extends FileSystemNode {
+case class FileNode(id: String, name: String, size: Int, modifiedDate: DateTime) extends FileSystemNode {
   def isFile = true
   def isFolder = false
 }
@@ -27,8 +27,9 @@ case class FileNode(name: String, size: Int, modifiedDate: DateTime) extends Fil
 sealed abstract class FolderNode extends FileSystemNode {
   def isFile = false
   def isFolder = true
+  def id: String
+
   def childs: Seq[FileSystemNode]
-  def isResolved: Boolean
 
   def search(url: String, remainder: String = ""): Option[(String, FileSystemNode)] = {
 
@@ -53,20 +54,10 @@ sealed abstract class FolderNode extends FileSystemNode {
   }
 }
 
-case class StaticFolderNode(name: String, childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
-  def isResolved = true
-}
+case class StaticFolderNode(id: String, name: String, childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode
 
-case class LazyFolderNode(name: String, resolver: () => Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
-
-  def isResolved = child.isDefined
-
-  var child: Option[Seq[FileSystemNode]] = None
-
-  def childs = if (child.isDefined) child.get else {
-    child = Some(resolver())
-    child.get
-  }
+case class LazyFolderNode(id: String, name: String, modifiedDate: DateTime) extends FolderNode {
+  def childs = Seq()
 }
 
 case class FolderAndFile(path: String, file: FileSystemNode) {

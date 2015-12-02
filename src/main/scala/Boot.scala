@@ -4,25 +4,27 @@ import akka.actor.{ActorSystem, Props}
 import akka.io.IO
 import akka.util.Timeout
 import client.DropboxCachedFileHandler
-import com.dropbox.core.DbxRequestConfig
-import com.dropbox.core.v2.DbxClientV2
+import client.dropbox.{FileDownloadRequest, FileListRequest, DropboxClient}
 import com.typesafe.config.ConfigFactory
 import spray.can.Http
+
+import scala.util._
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
   * Created by tomas on 01-12-15.
   */
 
 object Boot extends App {
-  implicit val system = ActorSystem()
+  implicit val system = ActorSystem("dropbox-cloud-client")
 
   val folder = new File(ConfigFactory.load().getString("client.cache-path"))
   folder.mkdirs()
 
-  val config = new DbxRequestConfig("tomasharkema/cloud-client", "nl_NL")
   val accessToken = "ettg2dEwl1YAAAAAAAFt_2A5_otEFHMZe0021S5bz4uWwzHhBEylvPApp1tFGNw0"
 
-  implicit val client = new DbxClientV2(config, accessToken)
+  implicit val client = new DropboxClient(accessToken)
 
   val fileHandler = new DropboxCachedFileHandler(folder)
   fileHandler.refreshFolder()

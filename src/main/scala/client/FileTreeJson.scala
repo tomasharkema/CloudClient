@@ -7,16 +7,17 @@ object FileTreeJson extends DefaultJsonProtocol {
 
   implicit object FileNodeJsonFormat extends RootJsonFormat[FileNode] {
     override def read(json: JsValue): FileNode = {
-      json.asJsObject.getFields("name", "size", "modifiedDate") match {
-        case Seq(JsString(name), JsNumber(size), JsNumber(jsonModifiedDate)) =>
-          FileNode(name, size.toInt, DateTime(jsonModifiedDate.toLong))
+      json.asJsObject.getFields("id", "name", "size", "modifiedDate") match {
+        case Seq(JsString(id), JsString(name), JsNumber(size), JsNumber(jsonModifiedDate)) =>
+          FileNode(id, name, size.toInt, DateTime(jsonModifiedDate.toLong))
         case _ =>
           throw new DeserializationException("FileNode expected")
       }
     }
 
     override def write(obj: FileNode): JsValue = JsObject(
-      "nodeType" -> JsString("file"),
+        "id" -> JsString(obj.id),
+        "nodeType" -> JsString("file"),
       "name" -> JsString(obj.name),
       "size" ->  JsNumber(obj.size),
       "modifiedDate" -> JsNumber(obj.modifiedDate.clicks)
@@ -28,14 +29,12 @@ object FileTreeJson extends DefaultJsonProtocol {
     import FileSystemNodeFormat._
 
     override def read(json: JsValue): FolderNode = {
-      json.asJsObject.getFields("name", "childs", "modifiedDate") match {
-        case Seq(JsString(name), JsArray(childs), JsNumber(jsonModifiedDate)) =>
+      json.asJsObject.getFields("id", "name", "childs", "modifiedDate") match {
+        case Seq(JsString(id), JsString(name), JsArray(childs), JsNumber(jsonModifiedDate)) =>
           if (childs.isEmpty) {
-            LazyFolderNode(name, { () =>
-              Seq[FileSystemNode]()
-            }, DateTime(jsonModifiedDate.toLong))
+            LazyFolderNode(id, name, DateTime(jsonModifiedDate.toLong))
           } else {
-            StaticFolderNode(name, childs.map(_.convertTo[FileSystemNode]), DateTime(0))
+            StaticFolderNode(id, name, childs.map(_.convertTo[FileSystemNode]), DateTime(jsonModifiedDate.toLong))
           }
 
         case _ =>
@@ -44,10 +43,11 @@ object FileTreeJson extends DefaultJsonProtocol {
     }
 
     override def write(obj: FolderNode): JsValue = {
-      val childs = if (obj.isResolved) JsArray(obj.childs.map(_.toJson).toVector) else JsArray()
+      val childs = JsArray(obj.childs.map(_.toJson).toVector)
 
       JsObject(
         "nodeType" -> JsString("folder"),
+        "id" -> JsString(obj.id),
         "name" -> JsString(obj.name),
         "childs" -> childs,
         "modifiedDate" -> JsNumber(obj.modifiedDate.clicks)

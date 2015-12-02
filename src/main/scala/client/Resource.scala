@@ -15,7 +15,7 @@ trait Resource {
   }
 
   def url: String
-  def children: Seq[Resource]
+  def children: Future[Seq[Resource]]
   def length: Int
   def date: DateTime
   def stream: Future[File]

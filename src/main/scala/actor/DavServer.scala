@@ -37,31 +37,27 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
   )
 
   def propfind(url: String, props: NodeSeq, res: Resource, depth: String) = {
-
-    val resources:Seq[Resource] = depth match {
-      case "0" => res::Nil
-      case "1" => res.children ++ (res :: Nil)
+    (depth match {
+      case "0" => Future.apply(res::Nil)
+      case "1" => res.children.map(c => c ++ (res :: Nil))
+    }).map { resources =>
+      <D:multistatus xmlns:D="DAV:">
+        {resources.map(res => {
+        val mapped: Seq[(Node, Option[Node])] = props.map(p => (p, res.property(p)))
+        <D:response>
+          <D:href>{url + "/" + res.url}</D:href>
+          <D:propstat xmlns:D="DAV:">
+            <D:prop>{mapped.flatMap(_ match { case (_, Some(p)) => p :: Nil; case (_, None) => Nil })}</D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+          </D:propstat>
+          <D:propstat xmlns:D="DAV:">
+            <D:prop>{mapped.flatMap(_ match { case (_, Some(p)) => Nil; case (p, None) => p })}</D:prop>
+            <D:status>HTTP/1.1 404 Not Found</D:status>
+          </D:propstat>
+        </D:response>
+      })}
+      </D:multistatus>
     }
-
-    <D:multistatus xmlns:D="DAV:">
-      {resources.map(res =>{
-      val mapped:Seq[(Node,Option[Node])] = props.map(p => (p,res.property(p)))
-      <D:response>
-        <D:href>{url + "/" + res.url}</D:href>
-        <D:propstat xmlns:D="DAV:">
-          <D:prop>
-            {mapped.flatMap(_ match {case (_,Some(p))=>p::Nil;case (_,None)=>Nil})}
-          </D:prop>
-          <D:status>HTTP/1.1 200 OK</D:status>
-        </D:propstat>
-        <D:propstat xmlns:D="DAV:">
-          <D:prop>
-            {mapped.flatMap(_ match {case (_,Some(p))=>Nil;case (p,None)=>p})}
-          </D:prop>
-          <D:status>HTTP/1.1 404 Not Found</D:status>
-        </D:propstat>
-      </D:response>})}
-    </D:multistatus>
   }
 
   def parsePath(path: Uri.Path): String = {
@@ -88,17 +84,18 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
       } pipeTo sender
 
     case HttpRequest(PROPFIND, path, headers, entity, _) =>
-      handler.resourceForTarget(parsePath(path.path)).map {
+      handler.resourceForTarget(parsePath(path.path)).flatMap {
         case Some(resource) =>
           val depth = headers.find(_.is("depth")).map(_.value).getOrElse("0")
           val input = XML.loadString(entity.asString)
-          val prop = propfind(url, input \ "prop" \ "_", resource, depth)
-          HttpResponse(
-            status = 207,
-            entity = HttpEntity.apply(`application/xml`, prop.toString)
-          )
+          propfind(url, input \ "prop" \ "_", resource, depth).map { prop =>
+            HttpResponse(
+              status = 207,
+              entity = HttpEntity.apply(`application/xml`, prop.toString)
+            )
+          }
         case None =>
-          HttpResponse(status = 404, entity = "Not Found")
+          Future.apply(HttpResponse(status = 404, entity = "Not Found"))
 
       }.recover {
         case e =>
@@ -110,7 +107,7 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
 
       val h = handler.resourceForTarget(parsePath(path.path))
         .flatMap(_.map(_.stream)
-          .getOrElse(Future.failed(new IllegalArgumentException(parsePath(path.path)))))
+          .getOrElse(Future.failed(new IllegalArgumentException("\"" + parsePath(path.path) + "\""))))
 
       h.map { stream =>
         HttpResponse(status = 200, HttpEntity.apply(HttpData.fromFile(fileName = stream.getAbsolutePath)))
