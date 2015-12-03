@@ -6,7 +6,7 @@ import java.util.Date
 import java.util.concurrent.Executors
 import client.FileTreeJson._
 import actor.FileHandler
-import client.dropbox.{FileListEntity, FileDownloadRequest, FileListRequest, DropboxClient}
+import client.dropbox._
 import com.typesafe.config.ConfigFactory
 import spray.http.DateTime
 import sun.misc.IOUtils
@@ -61,41 +61,52 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
   var resolvedFolders = mutable.Map[String, StaticFolderNode]()
 
   override def children: Future[Seq[Resource]] = node.file.folder.map {
-    case l: LazyFolderNode =>
+    case l: LazyFolderNodeNeedsClient =>
 
-      resolvedFolders.get(node.url) match {
-        case Some(l) =>
+      if (l.isResolved || l.isPending) {
+        l.childs
+      } else {
+        l.isPending = true
+        val resources = client.fileList(FileListRequest("/"+node.path+node.file.name)).map { flr =>
+          flr.entries.flatMap {
+            case FileListEntity(id, "folder", name, _ , _, _, _, _) =>
 
-          Future.apply(l.childs.map(child => DropboxResource(new File (absoluteFile + "/" + child.name), FolderAndFile(node.url, child))))
+              Seq[FileSystemNode](LazyFolderNode(id, name, DateTime(0)))
 
-        case None =>
-          client.fileList(FileListRequest(node.url))
-            .map { res =>
+            case FileListEntity(id, "file", name, _ , _, Some(server_modified), _, Some(size)) =>
 
-              val childs = res.entries
-                .map(child => (child, child.toFileNode))
+              Seq[FileSystemNode](FileNode(id, name, size.toInt, DateTime(0)))
 
-              childs.map(_._2)
+            case _ =>
+              Seq[FileSystemNode]()
+          }
+        }
 
-              childs.flatMap {
-                case (child, Some(n)) =>
-                  Seq(DropboxResource(new File(absoluteFile + "/" + child.name), FolderAndFile(node.url, n)))
-                case _ =>
-                  Seq()
-              }
-            }
+        resources onComplete {
+          case Success(res) =>
+            l.childsInjected = Some(res)
+          case Failure(e) =>
+            l.isPending = false
+        }
+
+        resources
       }
 
-    case l: StaticFolderNode =>
-      Future.apply(l.childs.map(child => DropboxResource(new File (absoluteFile + "/" + child.name), FolderAndFile(node.url, child))))
+    case l =>
+      l.childs
 
+  }.map{ l =>
+    l.map { childs =>
+      childs.map { child =>
+        DropboxResource(new File (absoluteFile + "/" + child.name), FolderAndFile(node.url, child))
+      }
+    }
   }.getOrElse(Future.failed(new IllegalStateException()))
-
 
   override def date: DateTime = node.file.modifiedDate
 
   override def length: Int = if (node.file.isFolder)
-    366 //node.file.folder.get.childs.length
+    0
   else {
     node.file.file.get.size
   }
@@ -124,14 +135,15 @@ class DropboxFileDownloader(client: DropboxClient) {
           val downloadEnabled = ConfigFactory.load().getBoolean("client.download")
 
           val f = if (downloadEnabled) {
+            println("Downloading " + node.url)
             absoluteFile.getParentFile.mkdirs()
             client.downloadFile(node.file.file.get).map { stream =>
               val target = new FileOutputStream(absoluteFile)
               try stream.foreach { chunck =>
                 target.write(chunck.toByteArray)
-              } finally target.close
+              } finally target.close()
               doneWithHit(node)
-
+              println("Downloaded " + node.url)
               absoluteFile
             }
           }
@@ -163,6 +175,25 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DropboxClient
 
   refreshFolder()
 
+  private def listFileContinue(cursor: String): Future[Seq[FileListEntity]] = {
+    println("CONTINUE " + cursor)
+    client.fileListContinue(FileListContinueRequest(cursor)).flatMap { e =>
+     if (e.has_more) {
+        listFileContinue(e.cursor).map { res =>
+          res ++ e.entries
+        }
+     } else {
+       Future.apply(e.entries)
+     }
+    }
+  }
+
+  def listFiles(): Future[Seq[FileSystemNode]] = {
+    client.fileList(FileListRequest("", include_media_info = false)).map { res =>
+      res.entries.map(_.toFileNode)
+    }
+  }
+
   def getNodesForFolder(path: String, pathState: String = ""): Future[Seq[FileSystemNode]] = {
 
     val thisPath = if (pathState == "") path else pathState + path
@@ -184,45 +215,44 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DropboxClient
   }
 
   def refreshFolder(): Unit = {
-    if (isRefreshing) {
-      return
-    }
+    if (!isRefreshing) {
 
-    println("Refresh folder")
+      println("Refresh folder")
 
-    val refreshFile = new File(cacheFolder.getAbsoluteFile + "/folders.json")
+      val refreshFile = new File(cacheFolder.getAbsoluteFile + "/folders.json")
 
-    isRefreshing = true
+      isRefreshing = true
 
-    if (refreshFile.exists) {
-      val source = scala.io.Source.fromFile(refreshFile)
-      val refreshFileString = try source.mkString finally source.close()
+      if (refreshFile.exists) {
+        val source = scala.io.Source.fromFile(refreshFile)
+        val refreshFileString = try source.mkString finally source.close()
 
-      try {
-        val s = refreshFileString.parseJson
-        _files = Some(s.convertTo[FolderNode])
-        isRefreshing = false
-      } catch {
-        case e =>
+        try {
+          val s = refreshFileString.parseJson
+          _files = Some(s.convertTo[FolderNode])
+          isRefreshing = false
+        } catch {
+          case e: Throwable =>
+            println(e)
+        }
+      } else {
+        _files = None
+      }
+
+      getNodesForFolder("")
+        .map(res => StaticFolderNode("", "", Future.apply(res), DateTime(0))) onComplete {
+        case Success(files) =>
+          println("Done refreshing folder")
+          _files = Some(files)
+
+          val newJson = files.asInstanceOf[FolderNode].toJson.toString()
+          val writer = new PrintWriter(refreshFile)
+          writer.write(newJson)
+          writer.close()
+
+        case Failure(e) =>
           println(e)
       }
-    } else {
-      _files = None
-    }
-
-    getNodesForFolder("")
-      .map(res => StaticFolderNode("", "", res, DateTime(0))) onComplete {
-      case Success(files) =>
-        println("Done refreshing folder")
-        _files = Some(files)
-
-        val newJson = files.asInstanceOf[FolderNode].toJson.toString()
-        val writer = new PrintWriter(refreshFile)
-        writer.write(newJson)
-        writer.close()
-
-      case Failure(e) =>
-        println(e)
     }
   }
 
@@ -249,11 +279,13 @@ class DropboxCachedFileHandler(cacheFolder: File)(implicit client: DropboxClient
 
   override def resourceForTarget(t: String): Future[Option[Resource]] = {
     val target = t.substring(1)
-    files().map { e =>
+    files().flatMap { e =>
       e.search(target).map { folderChain =>
-        val absoluteFile = new File(cacheFolder.getAbsolutePath + "/files/" + target)
-        val file = new File(target)
-        DropboxResource(absoluteFile, FolderAndFile(folderChain._1, folderChain._2))
+        folderChain.map { chain =>
+          val absoluteFile = new File(cacheFolder.getAbsolutePath + "/files/" + target)
+          val file = new File(target)
+          DropboxResource(absoluteFile, FolderAndFile(chain._1, chain._2))
+        }
       }
     }
   }

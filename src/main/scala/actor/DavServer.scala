@@ -67,10 +67,10 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
   def receive = {
     case _: Http.Connected => sender ! Http.Register(self)
 
-    case _: Http.CloseCommand =>
-      println("CLOSED")
-    case _: Http.ErrorClosed =>
-      println("ERR CLOSED")
+//    case _: Http.CloseCommand =>
+//      println("CLOSED")
+//    case _: Http.ErrorClosed =>
+//      println("ERR CLOSED")
 
     case HttpRequest(OPTIONS, _, _, _, _) =>
       sender ! optionsResponse

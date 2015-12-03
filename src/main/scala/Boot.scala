@@ -8,6 +8,7 @@ import client.dropbox.{FileDownloadRequest, FileListRequest, DropboxClient}
 import com.typesafe.config.ConfigFactory
 import spray.can.Http
 
+import scala.runtime.NonLocalReturnControl
 import scala.util._
 
 import scala.concurrent.ExecutionContext.Implicits.global

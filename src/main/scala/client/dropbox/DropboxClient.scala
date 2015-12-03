@@ -1,7 +1,7 @@
 package client.dropbox
 
 import akka.util.Timeout
-import client.{FileSystemNode, LazyFolderNode, FileNode}
+import client.{LazyFolderNodeNeedsClient, FileSystemNode, LazyFolderNode, FileNode}
 import spray.http._
 import spray.httpx.encoding._
 
@@ -46,6 +46,22 @@ object FileListRequest extends DefaultJsonProtocol {
     }
 }
 
+case class FileListContinueRequest(cursor: String)
+
+object FileListContinueRequestFormatter extends DefaultJsonProtocol {
+  implicit val FileListContinueRequestFormat = jsonFormat1(FileListContinueRequest.apply)
+}
+
+object FileListContinueRequest extends DefaultJsonProtocol {
+  implicit val FileListContinueRequestMarshaller =
+    Marshaller.of[FileListContinueRequest](ContentTypes.`application/json`) { (value, contentType, ctx) =>
+      import FileListContinueRequestFormatter._
+      val string = value.toJson.compactPrint
+      ctx.marshalTo(HttpEntity(contentType, string))
+    }
+}
+
+
 case class FileListEntity(id: String,
                           `.tag`: String,
                           name: String,
@@ -54,33 +70,31 @@ case class FileListEntity(id: String,
                           server_modified: Option[String],
                           rev: Option[String],
                           size: Option[Long]) {
-  def toFileNode: Option[FileSystemNode] = {
+  def toFileNode: FileSystemNode = {
     this match {
       case FileListEntity(id, "folder", name, _, _, _, _, _) =>
-        Some(LazyFolderNode(id, name, DateTime(0)))
+        LazyFolderNodeNeedsClient(id, name, DateTime(0))
 
       case FileListEntity(id, "file", name, _, _, Some(server_modified), _, Some(size)) =>
-        Some(FileNode(id, name, size.toInt, DateTime(0)))
+        FileNode(id, name, size.toInt, DateTime(0))
 
-      case _ =>
-        None
     }
   }
 }
 
 object FileListEntityFormatting extends DefaultJsonProtocol {
-  implicit val FileListEntityFormat = jsonFormat8(FileListEntity.apply)
+  implicit def FileListEntityFormat = jsonFormat8(FileListEntity.apply)
 }
 
-case class FileListResponse(entries: Seq[FileListEntity])
+case class FileListResponse(entries: Seq[FileListEntity], cursor: String, has_more: Boolean)
 
 object FileListResponseFormatting extends DefaultJsonProtocol {
   import FileListEntityFormatting._
-  implicit val FileListResponseFormat = jsonFormat1(FileListResponse.apply)
+  implicit def FileListResponseFormat = jsonFormat3(FileListResponse.apply)
 }
 
 object FileListResponse {
-  implicit val FileListResponseUnMarshaller =
+  implicit def FileListResponseUnMarshaller =
     Unmarshaller[FileListResponse](ContentTypeRange.apply(MediaTypes.`application/json`)) {
       case HttpEntity.NonEmpty(contentType, data) =>
         import FileListResponseFormatting._
@@ -96,7 +110,21 @@ class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
 
   def addAuthorization = addCredentials(OAuth2BearerToken(accessToken))
 
+  def fileListContinue(request: FileListContinueRequest) = {
+    val pipeline = (
+      addAuthorization
+        ~> sendReceive
+        ~> decode(Deflate)
+        ~> unmarshal[FileListResponse]
+      )
+
+    pipeline {
+      Post("https://api.dropboxapi.com/2/files/list_folder/continue", request)
+    }
+  }
+
   def fileList(request: FileListRequest) = {
+    import FileListResponse._
     val pipeline = (
       addAuthorization
       ~> sendReceive

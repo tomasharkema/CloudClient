@@ -1,7 +1,12 @@
 package client
 
+import client.dropbox.DropboxClient
 import spray.http.DateTime
 import spray.json._
+
+import scala.concurrent._
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object FileTreeJson extends DefaultJsonProtocol {
 
@@ -32,9 +37,9 @@ object FileTreeJson extends DefaultJsonProtocol {
       json.asJsObject.getFields("id", "name", "childs", "modifiedDate") match {
         case Seq(JsString(id), JsString(name), JsArray(childs), JsNumber(jsonModifiedDate)) =>
           if (childs.isEmpty) {
-            LazyFolderNode(id, name, DateTime(jsonModifiedDate.toLong))
+            LazyFolderNodeNeedsClient(id, name, DateTime(jsonModifiedDate.toLong))
           } else {
-            StaticFolderNode(id, name, childs.map(_.convertTo[FileSystemNode]), DateTime(jsonModifiedDate.toLong))
+            StaticFolderNode(id, name, Future.apply(childs.map(_.convertTo[FileSystemNode])), DateTime(jsonModifiedDate.toLong))
           }
 
         case _ =>
@@ -43,7 +48,7 @@ object FileTreeJson extends DefaultJsonProtocol {
     }
 
     override def write(obj: FolderNode): JsValue = {
-      val childs = JsArray(obj.childs.map(_.toJson).toVector)
+      val childs = if (obj.isResolved) JsArray(Await.result(obj.childs, 1 second).map(_.toJson).toVector) else JsArray()
 
       JsObject(
         "nodeType" -> JsString("folder"),
