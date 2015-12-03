@@ -104,7 +104,7 @@ class DavServerActor(url: String, handler: FileHandler) extends Actor with Actor
       } pipeTo sender
 
     case HttpRequest(GET, path, headers, entity, _) =>
-
+      println("serve: " + path)
       val h = handler.resourceForTarget(parsePath(path.path))
         .flatMap(_.map(_.stream)
           .getOrElse(Future.failed(new IllegalArgumentException("\"" + parsePath(path.path) + "\""))))

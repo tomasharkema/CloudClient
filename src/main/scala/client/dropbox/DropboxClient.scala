@@ -1,10 +1,11 @@
 package client.dropbox
 
+import akka.util.Timeout
 import client.{FileSystemNode, LazyFolderNode, FileNode}
 import spray.http._
 import spray.httpx.encoding._
 
-import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.util._
 import akka.actor.ActorSystem
 import spray.json._
@@ -92,25 +93,43 @@ class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
   import FileDownloadRequestFormatter._
 
   import system.dispatcher
-  val pipeline = (
-    addCredentials(OAuth2BearerToken(accessToken))
-      ~> addHeader(HttpHeaders.`Content-Type`(ContentTypes.`application/json`))
+
+  def addAuthorization = addCredentials(OAuth2BearerToken(accessToken))
+
+  def fileList(request: FileListRequest) = {
+    val pipeline = (
+      addAuthorization
       ~> sendReceive
       ~> decode(Deflate)
-    )
+      ~> unmarshal[FileListResponse]
+      )
 
-  val fileListPipeline = pipeline ~> unmarshal[FileListResponse]
-
-  val fileDownloadPipline = pipeline
-
-  def fileList(request: FileListRequest) = fileListPipeline {
-    Post("https://api.dropboxapi.com/2/files/list_folder", request)
+    pipeline {
+      Post("https://api.dropboxapi.com/2/files/list_folder", request)
+    }
   }
 
   def downloadHeader(pathRequest: FileDownloadRequest) = HttpHeaders.RawHeader("Dropbox-API-Arg", pathRequest.toJson.compactPrint)
 
-  def downloadFile(request: FileNode) = fileDownloadPipline {
-    Post("https://content.dropboxapi.com/2/files/download")
-      .withHeaders(downloadHeader(FileDownloadRequest(request.id)))
+  def downloadFile(request: FileNode) = {
+
+    implicit val FileUnmarshaller = new FromResponseUnmarshaller[Stream[HttpData]] {
+      import spray.json._
+      import DefaultJsonProtocol._
+
+      def apply(response: HttpResponse) = {
+        Right(response.entity.data.toChunkStream(1024))
+      }
+    }
+
+    val pipeline = (addAuthorization
+      ~> sendReceive
+      ~> unmarshal[Stream[HttpData]]
+      )
+
+    pipeline {
+      Post("https://content.dropboxapi.com/2/files/download")
+        .withHeaders(downloadHeader(FileDownloadRequest(request.id)))
+    }
   }
 }

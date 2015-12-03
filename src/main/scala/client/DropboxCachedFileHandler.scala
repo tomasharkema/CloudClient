@@ -125,20 +125,24 @@ class DropboxFileDownloader(client: DropboxClient) {
 
           val f = if (downloadEnabled) {
             absoluteFile.getParentFile.mkdirs()
-            client.downloadFile(node.file.file.get).map { result =>
-              val stream = result.entity.data.toChunkStream(1024)
+            client.downloadFile(node.file.file.get).map { stream =>
               val target = new FileOutputStream(absoluteFile)
               try stream.foreach { chunck =>
                 target.write(chunck.toByteArray)
               } finally target.close
+              doneWithHit(node)
+
               absoluteFile
             }
           }
-          else
+          else {
+            doneWithHit(node)
             Future.failed(new IllegalStateException())
+          }
 
           f onFailure {
             case e =>
+              doneWithHit(node)
               println(e)
           }
 
