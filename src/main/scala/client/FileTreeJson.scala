@@ -37,9 +37,9 @@ object FileTreeJson extends DefaultJsonProtocol {
       json.asJsObject.getFields("id", "name", "childs", "modifiedDate") match {
         case Seq(JsString(id), JsString(name), JsArray(childs), JsNumber(jsonModifiedDate)) =>
           if (childs.isEmpty) {
-            LazyFolderNodeNeedsClient(id, name, DateTime(jsonModifiedDate.toLong))
+            LazyFolderNode(id, name, DateTime(jsonModifiedDate.toLong))
           } else {
-            StaticFolderNode(id, name, Future.apply(childs.map(_.convertTo[FileSystemNode])), DateTime(jsonModifiedDate.toLong))
+            StaticFolderNode(id, name, childs.map(_.convertTo[FileSystemNode]), DateTime(jsonModifiedDate.toLong))
           }
 
         case _ =>
@@ -48,7 +48,7 @@ object FileTreeJson extends DefaultJsonProtocol {
     }
 
     override def write(obj: FolderNode): JsValue = {
-      val childs = if (obj.isResolved) JsArray(Await.result(obj.childs, 1 second).map(_.toJson).toVector) else JsArray()
+      val childs = if (obj.isResolved) JsArray(obj.childs.map(_.toJson).toVector) else JsArray()
 
       JsObject(
         "nodeType" -> JsString("folder"),

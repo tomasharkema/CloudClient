@@ -9,6 +9,7 @@ libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.5"
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.0"
 libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.1.5"
 
+
 libraryDependencies ++= {
   val akkaV = "2.4.0"
   val sprayV = "1.3.2"
@@ -25,6 +26,5 @@ libraryDependencies ++= {
     "org.specs2"          %%  "specs2-core"   % "3.6.6" % "test"
   )
 }
-
 
 fork in run := true

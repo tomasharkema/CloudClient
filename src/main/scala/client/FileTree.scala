@@ -16,6 +16,7 @@ sealed abstract class FileSystemNode {
   def name: String
   def isFile: Boolean
   def isFolder: Boolean
+  def size: Int
 
   def modifiedDate: DateTime
 
@@ -29,107 +30,26 @@ case class FileNode(id: String, name: String, size: Int, modifiedDate: DateTime)
 }
 
 sealed abstract class FolderNode extends FileSystemNode {
-  def isFile = false
-  def isFolder = true
+  val isFile = false
+  val isFolder = true
   def id: String
   def isResolved: Boolean
+  val size = 0
 
-  def childs: Future[Seq[FileSystemNode]]
-
-  def search(url: String, remainder: String = ""): Future[Option[(String, FileSystemNode)]] = {
-    childs.flatMap { c =>
-      if (url == "" || url == "." || url == "/") {
-        Future.apply(Some(("", this)))
-      } else {
-
-        val paths = url.split("/")
-
-        val child = Future {
-          c.find(c => c.name == paths.head)
-        }
-
-        if (paths.length > 1) {
-
-          child.flatMap { c =>
-            val url = paths.splitAt(1)._2.foldLeft[String]("") { (p, i) =>
-              if (p == "") i else p + "/" + i
-            }
-
-            c match {
-              case Some(child) =>
-                child.folder match {
-                  case Some(folder) =>
-                    folder.search(url, remainder + paths.head + "/")
-                  case None =>
-                    Future.apply(None)
-                }
-              case None =>
-                Future.apply(None)
-            }
-          }
-        } else {
-          child.map(c => c.map { c => (remainder, c) })
-        }
-      }
-    }
-  }
+  def childs: Seq[FileSystemNode]
 }
 
-case class LazyFolderNodeNeedsClient(id: String, name: String, modifiedDate: DateTime) extends FolderNode {
-  def isResolved = childsInjected.isDefined
-
-  var isPending = false
-  var childsInjected: Option[Seq[FileSystemNode]] = None
-
-  def childs: Future[Seq[FileSystemNode]] = Future {
-    childsInjected match {
-      case Some(e) =>
-        e
-      case None =>
-        while (childsInjected.isEmpty && isPending) {
-          Thread.sleep(1000)
-        }
-        childsInjected match {
-          case Some(s) =>
-            s
-          case None =>
-            throw new IllegalStateException("")
-        }
-    }
-  }
-}
-
-case class StaticFolderNode(id: String, name: String, childs: Future[Seq[FileSystemNode]], modifiedDate: DateTime) extends FolderNode {
+case class StaticFolderNode(id: String, name: String, childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
   val isResolved = true
 }
 
-case class LazyFolderNode(id: String, name: String, modifiedDate: DateTime)(implicit client: DropboxClient) extends FolderNode {
+case class LazyFolderNode(id: String, name: String, modifiedDate: DateTime) extends FolderNode {
 
-  def isResolved = _child.isDefined
+  def isResolved = _childs.isDefined
 
-  var _child: Option[Seq[FileSystemNode]] = None
+  var _childs: Option[Seq[FileSystemNode]] = None
 
-  def childs = _child match {
-    case Some(child) =>
-      Future { child }
-    case None =>
-
-      val newChild = client.fileList(FileListRequest("/"+name)).map { res =>
-        res.entries.map { r => r.toFileNode }
-      }
-
-      newChild onComplete {
-        case Success(c) =>
-          _child = Some(c)
-        case Failure(e) =>
-          e.printStackTrace()
-      }
-      newChild onFailure {
-        case e =>
-          println(e)
-      }
-      newChild
-  }
+  def childs = _childs.get
 }
 
 case class FolderAndFile(path: String, file: FileSystemNode) {

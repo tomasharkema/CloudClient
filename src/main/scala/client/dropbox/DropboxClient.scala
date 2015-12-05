@@ -1,7 +1,9 @@
 package client.dropbox
 
+import java.io.File
+
 import akka.util.Timeout
-import client.{LazyFolderNodeNeedsClient, FileSystemNode, LazyFolderNode, FileNode}
+import client._
 import spray.http._
 import spray.httpx.encoding._
 
@@ -73,7 +75,7 @@ case class FileListEntity(id: String,
   def toFileNode: FileSystemNode = {
     this match {
       case FileListEntity(id, "folder", name, _, _, _, _, _) =>
-        LazyFolderNodeNeedsClient(id, name, DateTime(0))
+        LazyFolderNode(id, name, DateTime(0))
 
       case FileListEntity(id, "file", name, _, _, Some(server_modified), _, Some(size)) =>
         FileNode(id, name, size.toInt, DateTime(0))
@@ -101,6 +103,8 @@ object FileListResponse {
         data.asString.parseJson.convertTo[FileListResponse]
     }
 }
+
+case class FileUploadRequest(file: File, filePath: String)
 
 class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
 
@@ -158,6 +162,17 @@ class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
     pipeline {
       Post("https://content.dropboxapi.com/2/files/download")
         .withHeaders(downloadHeader(FileDownloadRequest(request.id)))
+    }
+  }
+
+  def uploadFileStart(request: FileUploadRequest) = {
+    val pipeline = (addAuthorization
+      ~> sendReceive
+      ~> unmarshal[Stream[HttpData]]
+      )
+
+    pipeline {
+      Post("https://content.dropboxapi.com/2/files/upload")
     }
   }
 }
