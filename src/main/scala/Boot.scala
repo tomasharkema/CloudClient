@@ -34,4 +34,6 @@ object Boot extends App {
   val handler = system.actorOf(DavServerActor.props("http://localhost:7070", fileHandler, fileLockActor, fileSystemActor), name = "dav-server-actor")
 
   IO(Http) ! Http.Bind(handler, interface = "localhost", port = 7070)
+
+  println("RUNNING")
 }

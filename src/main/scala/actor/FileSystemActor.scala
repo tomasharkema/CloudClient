@@ -18,6 +18,7 @@ object FileSystemActor {
   case object RefreshFolder
   case class FindNode(target: String)
   case object CacheFolder
+  case class CreateFolder(target: String)
 
   def props(cacheFolder: File, client: DropboxClient): Props = Props(new FileSystemActor(cacheFolder, client))
 }
@@ -180,6 +181,10 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
         case _ =>
           println("nothing to cache")
       }
+
+    case CreateFolder(target) =>
+
+      sender ! None
   }
 
 }

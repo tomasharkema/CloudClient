@@ -26,6 +26,7 @@ trait FileHandler {
   def resourceForTarget(target: String): Future[Option[Resource]]
 
   def uploadResource(target: String, stream: Stream[HttpData]): Future[Boolean]
+  def createFolder(target: String): Future[Boolean]
 }
 
 object DavServerActor {
@@ -240,6 +241,22 @@ class DavServerActor(url: String, handler: FileHandler, lockingActor: ActorRef, 
           HttpResponse(status = 200)
         case false =>
           HttpResponse(status = 409)
+      } pipeTo sender
+
+    case HttpRequest(MKCOL, path, headers, _, _) =>
+      val url = parsePath(path.path)
+      println(path)
+      handler.createFolder(url).map { succeed =>
+        if (succeed) {
+          println(url)
+
+          HttpResponse(status = 201)
+
+        } else {
+          println("Already exist")
+
+          HttpResponse(status = 409)
+        }
       } pipeTo sender
 
 

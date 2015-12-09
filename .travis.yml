@@ -1,0 +1,18 @@
+language: scala
+scala:
+- 2.9.3
+- 2.10.4
+- 2.11.7
+jdk:
+- oraclejdk8
+- oraclejdk7
+- openjdk6
+after_success:
+- sbt one-jar
+deploy:
+  provider: releases
+  api_key:
+    secure: bGItcNV9GFDy/+ZVdcBqFkd5gZa52f3ueXw9x7Il5x0yzx7s+L+4fnfl853V9LF5MXtCFcLB76MJYoN7nBXOwu5BS6ka8Fkp3VsmyCl4q5oBCliu+Z40TDSrOnadz+MdgNyMFlPiIETVdZxaSBgd30uDWjSbo/XzI4YPALkxwjkRE8dQ4z5HZn8XfMVbHMjisqvEwAf2WmPBf74KVs2m/lFGBZbBZa+no+IFAgMQUFaxwTCFK1xvJ6z9M/9Oa7/bvNapIHCcpDvZmYxbP3089N4n6J5l5WFoZv9W5nEP+1iCHs/4MN6WEHzmh5cr5TG1dsYqvG7gpfEPkyOxwg/0Ki5Kp2Z0wg8+tOXAvYvW73375iqMbbvC69gOIzCJEs5E0K9sHehGHNRHR8lHBhY5Vb3LRf0eigFliU9e36wP8sIrNue+U3qXt97DeGsjsC+9q61QVSnN/ymNaIt2xoqn+LhDP8dqQbA/oeu5sWYLac8g9cgBN3rocBt47bWmI+TSsupPeBZ5HfevMygStvt9bEVP3Ky4aVg7Uo/aSnsvOaOm7FwvM/sch2CjkiiMdeHBHIjY7HwoBjsGY9Irp3Q20rka6z3jZrkn17D9jQmJ5IiEh499VeKWa4RBMDoxV+mxkkDY9KrVGOzSGD2ufYnSBnd/AkzX0seTFPGHwpQFv94=
+  file: /target/scala-2.11/cloud-client_2.11-1.0-one-jar.jar
+  on:
+    tags: true

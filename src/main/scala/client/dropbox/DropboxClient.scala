@@ -104,9 +104,32 @@ object FileListResponse {
     }
 }
 
-case class FileUploadRequest(file: File, filePath: String)
+case class FileUploadRequest(path: String, mode: String = "add", autorename: Boolean = true, mute: Boolean = false)
+
+object FileUploadRequestFormatting extends DefaultJsonProtocol {
+  import FileUploadRequest._
+  implicit def FileUploadRequestFormat = jsonFormat4(FileUploadRequest.apply)
+}
+
+case class FileUploadResponse(name: String)
+
+object FileUploadResponseFormatting extends DefaultJsonProtocol {
+  import FileUploadResponse._
+  implicit def FileUploadResponseFormat = jsonFormat1(FileUploadResponse.apply)
+}
+
+object FileUploadResponse {
+  implicit def FileUploadResponseUnMarshaller =
+    Unmarshaller[FileUploadResponse](ContentTypeRange.apply(MediaTypes.`application/json`)) {
+      case HttpEntity.NonEmpty(contentType, data) =>
+        import FileUploadResponseFormatting._
+        data.asString.parseJson.convertTo[FileUploadResponse]
+    }
+}
 
 class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
+
+  def `Dropbox-API-Arg`(value: String) = HttpHeaders.RawHeader("Dropbox-API-Arg", value)
 
   import FileDownloadRequestFormatter._
 
@@ -141,7 +164,7 @@ class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
     }
   }
 
-  def downloadHeader(pathRequest: FileDownloadRequest) = HttpHeaders.RawHeader("Dropbox-API-Arg", pathRequest.toJson.compactPrint)
+  def downloadHeader(pathRequest: FileDownloadRequest) = `Dropbox-API-Arg`(pathRequest.toJson.compactPrint)
 
   def downloadFile(request: FileNode) = {
 
@@ -165,14 +188,18 @@ class DropboxClient(accessToken: String)(implicit system: ActorSystem) {
     }
   }
 
-  def uploadFileStart(request: FileUploadRequest) = {
+  import FileUploadRequestFormatting._
+  def uploadHeader(request: FileUploadRequest) = `Dropbox-API-Arg`(request.toJson.compactPrint)
+
+  def uploadFile(file: File, request: FileUploadRequest) = {
     val pipeline = (addAuthorization
       ~> sendReceive
-      ~> unmarshal[Stream[HttpData]]
+      ~> unmarshal[FileUploadResponse]
       )
 
     pipeline {
-      Post("https://content.dropboxapi.com/2/files/upload")
+      Post("https://content.dropboxapi.com/2/files/upload", HttpEntity.apply(HttpData.fromFile(fileName = file.getAbsolutePath)))
+        .withHeaders(uploadHeader(request))
     }
   }
 }

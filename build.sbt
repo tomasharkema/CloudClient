@@ -9,6 +9,7 @@ libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.5"
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.0"
 libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.1.5"
 
+exportJars := true
 
 libraryDependencies ++= {
   val akkaV = "2.4.0"
@@ -27,4 +28,9 @@ libraryDependencies ++= {
   )
 }
 
+import com.github.retronym.SbtOneJar._
+
+oneJarSettings
+
 fork in run := true
+

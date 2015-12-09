@@ -2,7 +2,7 @@ package client
 
 import java.io._
 import java.util.Date
-import actor.FileSystemActor.{FindNode, RefreshFolder}
+import actor.FileSystemActor.{CreateFolder, FindNode, RefreshFolder}
 import akka.actor._
 import akka.util.Timeout
 import actor.FileHandler
@@ -69,6 +69,9 @@ case class DropboxResource(absoluteFile: File, node: FolderAndFile)(implicit cli
 
 }
 
+case object DownloadDisabledException extends Throwable {}
+case object FileTooBigException extends Throwable {}
+
 class DropboxFileDownloader(client: DropboxClient) {
 
   var hits = mutable.HashMap[String, Future[File]]()
@@ -87,9 +90,18 @@ class DropboxFileDownloader(client: DropboxClient) {
           println("Serving " + node.url + "...")
           Future.apply(absoluteFile)
         } else {
+
           val downloadEnabled = ConfigFactory.load().getBoolean("client.download")
           val isTooBig = node.file.size > 524288000
-          val f = if (downloadEnabled && !isTooBig) {
+
+          val f = if (!downloadEnabled) {
+            Future.failed(DownloadDisabledException)
+
+          } else if (isTooBig) {
+            Future.failed(FileTooBigException)
+
+          } else {
+
             Future {
               println("Downloading " + node.url + " had more: " + hits.size)
               absoluteFile.getParentFile.mkdirs()
@@ -104,9 +116,6 @@ class DropboxFileDownloader(client: DropboxClient) {
                 absoluteFile
               }
             }
-          }
-          else {
-            Future.failed(new IllegalStateException())
           }
 
           f onFailure {
@@ -134,7 +143,8 @@ class DropboxCachedFileHandler(cacheFolder: File, fileSystemActor: ActorRef)(imp
     fileSystemActor ! RefreshFolder
   }
 
-  def searchForFile(target: String): Future[Option[(String, FileSystemNode)]] = (fileSystemActor ? FindNode(target)).mapTo[Option[(String, FileSystemNode)]]
+  def searchForFile(target: String): Future[Option[(String, FileSystemNode)]] =
+    (fileSystemActor ? FindNode(target)).mapTo[Option[(String, FileSystemNode)]]
 
   def pathCreate(previous: Seq[FileSystemNode]): String =
     previous.filter(_.isFolder).foldLeft[String]("") { (prev, el) =>
@@ -171,4 +181,18 @@ class DropboxCachedFileHandler(cacheFolder: File, fileSystemActor: ActorRef)(imp
     }
   }
 
+  override def createFolder(target: String): Future[Boolean] = resourceForTarget(target).flatMap {
+    case None =>
+      (fileSystemActor ? CreateFolder(target))
+        .mapTo[Option[FileSystemNode]]
+        .map {
+          case Some(node) =>
+            true
+          case _ =>
+            false
+        }
+
+    case Some(_) =>
+      Future { false }
+  }
 }
