@@ -2,7 +2,18 @@ name := "cloud-client"
 
 version := "1.0"
 
-scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8", "-feature")
+scalacOptions := Seq(
+  "-unchecked",
+  "-deprecation",
+  "-encoding",
+  "utf8",
+  "-feature",
+  "-language:implicitConversions",
+  "-language:higherKinds",
+  "-language:existentials",
+  "-language:postfixOps",
+  "-optimize"
+)
 
 scalaVersion := "2.11.7"
 libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.5"
