@@ -1,12 +1,10 @@
-import java.io.File
-
+import akka.actor._
+import akka.testkit._
 import org.junit.runner.RunWith
 import org.specs2.mutable._
 import org.specs2.runner.JUnitRunner
 import org.specs2.time.NoTimeConversions
 
-import akka.actor._
-import akka.testkit._
 import scala.concurrent.duration._
 
 //@RunWith(classOf[JUnitRunner])
