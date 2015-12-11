@@ -28,7 +28,7 @@ class FileSystemTest extends Specification with NoTimeConversions {
   "FileSystem search" should {
 
     "find root in dropbox folder" in new AkkaSpecs2Support {
-      within(1 second) {
+      within(100 seconds) {
         val (_, _, actor) = prepare
 
         actor ! FindNode("/")
@@ -45,7 +45,7 @@ class FileSystemTest extends Specification with NoTimeConversions {
     }
 
     "not find incorrect subfolder in dropbox folder" in new AkkaSpecs2Support {
-      within(1 second) {
+      within(100 seconds) {
         val (_, _, actor) = prepare
 
         actor ! FindNode("/A/B/C/D/E")
@@ -62,7 +62,7 @@ class FileSystemTest extends Specification with NoTimeConversions {
     }
 
     "find a correct subfolder in dropbox folder" in new AkkaSpecs2Support {
-      within(10 second) {
+      within(100 second) {
         val (_, _, actor) = prepare
 
         actor ! FindNode("Afbeeldingen/2015/2015-12-09")
