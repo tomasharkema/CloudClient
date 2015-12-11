@@ -13,7 +13,6 @@ import spray.can.Http
   */
 
 object Boot extends App {
-
   Config.analyze
 
   implicit val system = ActorSystem("dropbox-cloud-client")

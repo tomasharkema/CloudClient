@@ -10,22 +10,27 @@ object Config {
 
   def configFact = ConfigFactory.parseFile(file)
 
-  val cachePath = configFact.getString("client.cache-path")
-  val accessToken = configFact.getString("client.access-token")
+  def cachePath = configFact.getString("client.cache-path")
+  def accessToken = configFact.getString("client.access-token")
 
-  def analyze: Unit = {
+  def analyze: Boolean = {
 
     if (!file.exists()) {
       println("-----------------------")
       println("-----------------------")
 
       println("You should create a client.conf file!")
+      println("Looking for: " + file.getAbsolutePath)
 
       println("-----------------------")
       println("-----------------------")
+
+      System.exit(1)
     }
 
     cachePath
     accessToken
+
+    true
   }
 }
