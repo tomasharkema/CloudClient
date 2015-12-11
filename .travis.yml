@@ -4,8 +4,6 @@ scala:
 sbt_args: -no-colors -J-Xss2m
 jdk:
 - oraclejdk8
-- oraclejdk7
-- openjdk6
 after_success:
 - sbt one-jar
 before_deploy:
@@ -29,9 +27,6 @@ cache:
     - $HOME/.sbt/boot/
 
 script:
-  # Your normal script
   - sbt ++$TRAVIS_SCALA_VERSION -J-XX:ReservedCodeCacheSize=256M test
-
-  # Tricks to avoid unnecessary cache updates
   - find $HOME/.sbt -name "*.lock" | xargs rm
   - find $HOME/.ivy2 -name "ivydata-*.properties" | xargs rm
