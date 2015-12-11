@@ -3,7 +3,7 @@ import actor.{FileUploadActor, FileSystemActor, FileLockingActor, DavServerActor
 import akka.actor.{ActorSystem, Props}
 import akka.io.IO
 import akka.util.Timeout
-import client.DropboxCachedFileHandler
+import client.{Config, DropboxCachedFileHandler}
 import client.dropbox.{FileDownloadRequest, FileListRequest, DropboxClient}
 import com.typesafe.config.ConfigFactory
 import spray.can.Http
@@ -14,12 +14,13 @@ import spray.can.Http
 
 object Boot extends App {
 
+  Config.analyze
+
   implicit val system = ActorSystem("dropbox-cloud-client")
 
-  val folder = new File(ConfigFactory.load().getString("client.cache-path"))
+  val folder = new File(Config.cachePath)
+  val accessToken = Config.accessToken
   folder.mkdirs()
-
-  val accessToken = "ettg2dEwl1YAAAAAAAFt_2A5_otEFHMZe0021S5bz4uWwzHhBEylvPApp1tFGNw0"
 
   implicit val client = new DropboxClient(accessToken)
 

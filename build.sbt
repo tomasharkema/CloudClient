@@ -35,13 +35,16 @@ libraryDependencies ++= {
     "io.spray"            %%  "spray-client"  % sprayV,
     "com.typesafe.akka"   %%  "akka-actor"    % akkaV,
     "com.typesafe.akka"   %%  "akka-testkit"  % akkaV   % "test",
-    "org.specs2"          %%  "specs2-core"   % "3.6.6" % "test"
+    "org.specs2"          %%  "specs2-core"   % "3.6.6" % "test",
+    "org.specs2"          %%  "specs2-junit"  % "3.6.6"
   )
 }
 
 import com.github.retronym.SbtOneJar._
 
 oneJarSettings
+
+scalacOptions in Test ++= Seq("-Yrangepos")
 
 fork in run := true
 
