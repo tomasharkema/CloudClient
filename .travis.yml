@@ -4,8 +4,6 @@ scala:
 sbt_args: -no-colors -J-Xss2m
 jdk:
 - oraclejdk8
-- oraclejdk7
-- openjdk6
 after_success:
 - sbt one-jar
 before_deploy:
@@ -22,3 +20,13 @@ deploy:
 before_install:
 - openssl aes-256-cbc -K $encrypted_9db92db167c9_key -iv $encrypted_9db92db167c9_iv
   -in client.conf.enc -out client.conf -d
+
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt/boot/
+
+script:
+  - sbt ++$TRAVIS_SCALA_VERSION -J-XX:ReservedCodeCacheSize=256M test
+  - find $HOME/.sbt -name "*.lock" | xargs rm
+  - find $HOME/.ivy2 -name "ivydata-*.properties" | xargs rm

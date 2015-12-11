@@ -157,27 +157,34 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
 
       folderFuture onSuccess {
         case newFiles =>
-          _files = Some(newFiles)
           self ! CacheFolder
+          _files.synchronized { _files = Some(newFiles) }
       }
 
       folderFuture pipeTo sender
 
     case FindNode(target) =>
 
-      if (_files.isEmpty) {
-        (self ? RefreshFolder).mapTo[FileSystemNode]
+      val res: Future[FolderNode] = if (_files.synchronized { _files.isEmpty }) {
+        (self ? RefreshFolder).mapTo[FolderNode]
       } else {
         Future { _files.get }
-      }.flatMap(files => search(target, currentNode = files)) pipeTo sender
+      }
+
+      res.flatMap(files => search(target, currentNode = files)) pipeTo sender
 
     case CacheFolder =>
       _files match {
         case Some(files) =>
           val newJson = files.asInstanceOf[FolderNode].toJson.toString()
-          val writer = new PrintWriter(refreshFile)
-          writer.write(newJson)
-          writer.close()
+          try {
+            val writer = new PrintWriter(refreshFile)
+            writer.write(newJson)
+            writer.close()
+          } catch {
+            case e: Throwable =>
+              println(e)
+          }
         case _ =>
           println("nothing to cache")
       }
