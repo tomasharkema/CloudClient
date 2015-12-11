@@ -80,5 +80,23 @@ class FileSystemTest extends Specification with NoTimeConversions {
       }
     }
 
+    "find a correct file in dropbox folder" in new AkkaSpecs2Support {
+      within(100 seconds) {
+        val (_, _, actor) = prepare
+
+        actor ! FindNode("Afbeeldingen/2015/2015-12-09/IO5A2606.CR2")
+
+        val result = expectMsgType[Option[(String, FileSystemNode)]]
+
+        result match {
+          case Some((path, nodes)) =>
+            path must be equalTo "Afbeeldingen/2015/2015-12-09/"
+            nodes.name must be equalTo "IO5A2606.CR2"
+          case None =>
+            ko("Should have found a folder")
+        }
+      }
+    }
+
   }
 }
