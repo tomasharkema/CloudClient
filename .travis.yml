@@ -1,12 +1,14 @@
 language: scala
 scala:
 - 2.11.7
+sbt_args: -no-colors -J-Xss2m
 jdk:
 - oraclejdk8
 - oraclejdk7
 - openjdk6
 after_success:
 - sbt one-jar
+secure: "NO+HqVRAhuzRzSdDU/zpijnRs/DumD/9bA1uIlcvOKF7Mmp3RN1IEUIaaZm3PeXB7VcJPkBKGq0PvY+HJMuh/bsIjIy7lT1RquaFtO6NOf3LGC3CD7125cHQYVuKBJP2AFhEluaE8xxzwhFO0p20QjxrrnFOP5XTnKw9E9zDVV+83RFtdtrO8xkAZCpewB0Dg5ubiyfN7OhyLT/+c57isy5SK3Jo6ia+HzbB9B6McHIZbO9QMwHp8+tDLSxV4g3/xMd7RRCKe2jd6PEpH63r8IYpeiA8tLWPj2pc0oNopPE2e3GKV6BnTsqO32T7XGLGdRE8N9vCN57MP51wGu3xATwaRT2XlM8Gkz3+KabY8AGFuACcR2TcKb4tGxOU7kTw69aH44GcnPma814oT0ruYQBoxbFY78VPj214j/9I7AhSUdNDGhF1xyCIn2ChtxGCjQYPbJ8Z0lCJkLeHoSAgrHNN7bm2c6rtAOuz7Y6MhHi/zpHt0krwfVq1pZ+soWryiA1DM5rsaTBgiwkFTuYxWSSLUwJ8Q6iWX8lLVD7E4GA1x1eejvTyU1BHv3+avn2I7EAvUC6dHKBWYX1mYjQgp86MPFPluXv4H3KNTyelM6koWCkdm4G+i7QjnDlYStInAxBzMVfsUOUsNkhliGsTWwIynrCgeRkukVtCUgWBocQ="
 deploy:
   provider: releases
   api_key:
