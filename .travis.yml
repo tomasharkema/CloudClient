@@ -15,6 +15,6 @@ deploy:
   file: /target/scala-2.11/cloud-client_2.11-1.0-one-jar.jar
   on:
     tags: true
-env:
-  global:
-    secure: OAyLVl/Nfoguv+6IQZQTXikXMPGJTB0Qt1FFhgUf1VyylVLc9NOtk506L1Z/prgCd4p5LZJeq/3nkSOkXm6D29TqvW8pd0Wclk7M6xEFL9FVvrrdrySAgbeFEFPepQzneYtuoAXuE/AGksXGgJ2U2SizWpeeXiiAdFHQO4kM2X/4SYnwG62Iim0GuTpo9mkhOAoEumBYn+DRjpVcM77S85G1MLEo0CBRYCr8n6woPrjon+A42BQv74J2Y8EX7j3aIDXoWcSbjxX963iKHROX2vGTHd0BTnVg2KKdIAn4ojVMrJJWzdp24GVlv1HEFWw2aTR6pE8PPZXSUxbjuZzLoJ6bUbz2aLL/0adoyIrUYltg8c7hPjfJnzVq/tDL/OL9z+4zjDlGzn112Wxun/TnhKFgohm7YFExVrJs77ur8UIYLmR/2IIIB01g9cyEZVl1a8QxrM1pRmiRVxLR2u0VPfuelwEeqt2QHSk6fItpCnmFl+DFipboAUP0aygs9K57viqzd3BbGQ4CGIVkIrfaQC1xiLip4PTYqWEkRkSwU5HKPX9YVDQczKmR8vHxYLmv0SPQesgg4c0ikJSHI8lM3Amr9hIGBHBCADv9lRBQEo3BEHt1JyQlcg4XeLgxGBvgeRHk4OViUQ6hU/2KNEdR7yMW7Ln9UVR1H0w18HIILu4=
+before_install:
+- openssl aes-256-cbc -K $encrypted_9db92db167c9_key -iv $encrypted_9db92db167c9_iv
+  -in client.conf.enc -out client.conf -d
