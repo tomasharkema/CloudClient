@@ -91,7 +91,7 @@ class DropboxFileDownloader(client: DropboxClient) {
           Future.apply(absoluteFile)
         } else {
 
-          val downloadEnabled = ConfigFactory.load().getBoolean("client.download")
+          val downloadEnabled = Config.download
           val isTooBig = node.file.size > 524288000
 
           val f = if (!downloadEnabled) {

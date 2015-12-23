@@ -41,12 +41,10 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
 
     client.fileList(FileListRequest(thisPath)).map { flr =>
       flr.entries.flatMap {
-        case FileListEntity(id, "folder", name, _ , _, _, _, _) =>
-
+        case FileListEntity(id, "folder", name, _, _, _, _, _) =>
           Seq(LazyFolderNode(id, name, DateTime(0)))
 
-        case FileListEntity(id, "file", name, _ , _, Some(server_modified), _, Some(size)) =>
-
+        case FileListEntity(id, "file", name, _, _, Some(server_modified), _, Some(size)) =>
           Seq(FileNode(id, name, size.toInt, DateTime(0)))
 
         case _ =>
@@ -60,7 +58,7 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
 
     import context.dispatcher
     getNodesForFolder("/" + remainder + currentNode.name).map { seq =>
-      currentNode.asInstanceOf[LazyFolderNode]._childs = Some(seq)
+      currentNode.asInstanceOf[LazyFolderNode]._childs = seq
       currentNode.childs
     }
   }
@@ -115,20 +113,26 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
       }
     }
   }.flatMap {
-    case r @ Some((remainder, node)) =>
+    case r@Some((remainder, node)) =>
       node match {
         case r: LazyFolderNode =>
-          if (r.isResolved) Future { Some(remainder, r) }
+          if (r.isResolved) Future {
+            Some(remainder, r)
+          }
           else
             resolveChilds(node.folder.get, remainder).map { seq =>
-              r._childs = Some(seq)
+              r._childs = seq
               Some(remainder, r)
             }
         case _ =>
-          Future { r }
+          Future {
+            r
+          }
       }
     case r: Option[(String, FileSystemNode)] =>
-      Future { r }
+      Future {
+        r
+      }
   }
 
   override def preStart(): Unit = {
@@ -149,6 +153,43 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
 
   }
 
+  private def createFolder(target: String): Future[Boolean] = {
+    val targetFile = new File(cacheFolder + "/files/" + target)
+    targetFile.mkdirs()
+    getRootFolderNode.flatMap { folderNode =>
+
+      val folder = targetFile
+        .getAbsoluteFile
+        .getParent
+        .replace(cacheFolder.getAbsolutePath + "/files", "/")
+
+      search(folder, folderNode)
+    }.flatMap {
+      case Some((_, node: FolderNode)) =>
+        node.addNode(LazyFolderNode("AAABBBCCCDDD", targetFile.getName, DateTime.now))
+
+        self ! CacheFolder
+
+        Future {
+          true
+        }
+
+      case _ =>
+        Future {
+          false
+        }
+
+    }
+  }
+
+
+  private def getRootFolderNode: Future[FolderNode] =
+    if (_files.synchronized { _files.isEmpty }) {
+      (self ? RefreshFolder).mapTo[FolderNode]
+    } else {
+      Future { _files.get }
+    }
+
   def receive = {
     case RefreshFolder =>
 
@@ -164,12 +205,7 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
       folderFuture pipeTo sender
 
     case FindNode(target) =>
-
-      val res: Future[FolderNode] = if (_files.synchronized { _files.isEmpty }) {
-        (self ? RefreshFolder).mapTo[FolderNode]
-      } else {
-        Future { _files.get }
-      }
+      val res = getRootFolderNode
 
       res.flatMap(files => search(target, currentNode = files)) pipeTo sender
 
@@ -191,7 +227,19 @@ class FileSystemActor(cacheFolder: File, client: DropboxClient) extends Actor {
 
     case CreateFolder(target) =>
 
-      sender ! None
+      val resourceFuture = (self ? FindNode(target))
+        .mapTo[Option[(String, FileSystemNode)]]
+
+      val res: Future[Option[Boolean]] = resourceFuture.flatMap {
+        case None =>
+          createFolder(target)
+            .map { Some(_) }
+
+        case Some(_) =>
+          Future { None }
+      }
+
+      res pipeTo sender
   }
 
 }

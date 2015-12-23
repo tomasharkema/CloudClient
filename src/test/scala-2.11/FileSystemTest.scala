@@ -1,7 +1,7 @@
 import java.io.File
 
 import actor.FileSystemActor
-import actor.FileSystemActor.{RefreshFolder, FindNode}
+import actor.FileSystemActor._
 import akka.actor.ActorSystem
 import client.{FileSystemNode, Config}
 import client.dropbox.DropboxClient
@@ -23,6 +23,9 @@ class FileSystemTest extends Specification with NoTimeConversions {
 
   def prepare()(implicit system: ActorSystem) = {
     val folder = new File(Config.cachePath)
+    Option(folder.listFiles())
+      .map(_.foreach(_.delete()))
+    folder.mkdirs()
     val client = new DropboxClient(accessToken)
     (folder, client, system.actorOf(FileSystemActor.props(folder, client)))
   }
@@ -94,6 +97,34 @@ class FileSystemTest extends Specification with NoTimeConversions {
             nodes.name must be equalTo "IO5A2606.CR2"
           case None =>
             ko("Should have found a folder")
+        }
+      }
+    }
+
+    "be able to create a folder that not exists" in new AkkaSpecs2Support {
+      within(100 seconds) {
+        val (_, _, actor) = prepare
+
+        val folder = "/untitled"
+
+        actor ! CreateFolder(folder)
+
+        expectMsgType[Option[Boolean]] match {
+          case Some(true) =>
+            within(100 seconds) {
+              actor ! FindNode(folder)
+
+              expectMsgType[Option[(String, FileSystemNode)]] match {
+                case Some((ref, node)) =>
+                  ok("Created!")
+
+                case _ =>
+                  ko("Creating went fine, but still not found?!")
+              }
+            }
+
+          case _ =>
+            ko("Not created?!")
         }
       }
     }

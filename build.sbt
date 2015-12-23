@@ -16,7 +16,7 @@ scalacOptions := Seq(
 )
 
 scalaVersion := "2.11.7"
-libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.5"
+//libraryDependencies += "org.scala-lang.modules" % "scala-xml_2.11" % "1.0.5"
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.0"
 libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.1.5"
 
@@ -41,6 +41,10 @@ libraryDependencies ++= {
 }
 
 import com.github.retronym.SbtOneJar._
+
+artifactName := { (sv: ScalaVersion, module: ModuleID, artifact: Artifact) =>
+  artifact.name + "-" + artifact.classifier.getOrElse("standard") +  "." + artifact.extension
+}
 
 oneJarSettings
 

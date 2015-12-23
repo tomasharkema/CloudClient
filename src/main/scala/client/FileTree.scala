@@ -37,19 +37,29 @@ sealed abstract class FolderNode extends FileSystemNode {
   val size = 0
 
   def childs: Seq[FileSystemNode]
+
+  def addNode(folderNode: FolderNode)
 }
 
-case class StaticFolderNode(id: String, name: String, childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
+case class StaticFolderNode(id: String, name: String, var childs: Seq[FileSystemNode], modifiedDate: DateTime) extends FolderNode {
   val isResolved = true
+
+  override def addNode(folderNode: FolderNode) = {
+    childs ++= Seq(folderNode)
+  }
 }
 
 case class LazyFolderNode(id: String, name: String, modifiedDate: DateTime) extends FolderNode {
 
-  def isResolved = _childs.isDefined
+  def isResolved = _childs.nonEmpty
 
-  var _childs: Option[Seq[FileSystemNode]] = None
+  var _childs: Seq[FileSystemNode] = Seq()
 
-  def childs = _childs.get
+  def childs = _childs
+
+  override def addNode(folderNode: FolderNode) = {
+    _childs ++= Seq(folderNode)
+  }
 }
 
 case class FolderAndFile(path: String, file: FileSystemNode) {
